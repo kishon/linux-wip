@@ -612,7 +612,6 @@
 					<GIC_SPI 50 IRQ_TYPE_EDGE_RISING>,
 					<GIC_SPI 51 IRQ_TYPE_EDGE_RISING>;
 			};
->>>>>>> ARM: dts: k2g: Add DT bindings for PCIe controller driver
 		};
 	};
 };
