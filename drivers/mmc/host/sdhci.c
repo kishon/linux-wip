@@ -3264,7 +3264,8 @@ int sdhci_setup_host(struct sdhci_host *host)
 	}
 
 	if ((host->version >= SDHCI_SPEC_200) &&
-		(host->caps & SDHCI_CAN_DO_ADMA2))
+		((host->caps & SDHCI_CAN_DO_ADMA2) ||
+		(host->quirks2 & SDHCI_QUIRK2_FORCE_ADMA)))
 		host->flags |= SDHCI_USE_ADMA;
 
 	if ((host->quirks & SDHCI_QUIRK_BROKEN_ADMA) &&
