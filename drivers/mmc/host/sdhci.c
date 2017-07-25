@@ -1747,6 +1747,9 @@ void sdhci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 	if (host->quirks & SDHCI_QUIRK_RESET_CMD_DATA_ON_IOS)
 		sdhci_do_reset(host, SDHCI_RESET_CMD | SDHCI_RESET_DATA);
 
+	if (host->ops->set_bus_mode)
+		host->ops->set_bus_mode(host, ios->bus_mode);
+
 	mmiowb();
 }
 EXPORT_SYMBOL_GPL(sdhci_set_ios);
