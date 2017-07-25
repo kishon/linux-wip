@@ -1182,14 +1182,25 @@ static void sdhci_finish_command(struct sdhci_host *host)
 
 	if (cmd->flags & MMC_RSP_PRESENT) {
 		if (cmd->flags & MMC_RSP_136) {
-			/* CRC is stripped so we need to do some shifting. */
-			for (i = 0;i < 4;i++) {
-				cmd->resp[i] = sdhci_readl(host,
-					SDHCI_RESPONSE + (3-i)*4) << 8;
-				if (i != 3)
-					cmd->resp[i] |=
-						sdhci_readb(host,
-						SDHCI_RESPONSE + (3-i)*4-1);
+			if (!(host->quirks2 & SDHCI_QUIRK2_NO_CRC_STRIPPING)) {
+				/*
+				 * CRC is stripped so we need to do some
+				 * shifting.
+				 */
+				for (i = 0; i < 4; i++) {
+					cmd->resp[i] =
+						sdhci_readl(host, SDHCI_RESPONSE
+							    + (3 - i) * 4) << 8;
+					if (i != 3)
+						cmd->resp[i] |=
+						sdhci_readb(host, SDHCI_RESPONSE
+							    + (3 - i) * 4 - 1);
+				}
+			} else {
+				for (i = 0; i < 4; i++)
+					cmd->resp[i] =
+					sdhci_readl(host, SDHCI_RESPONSE +
+						    (3 - i) * 4);
 			}
 		} else {
 			cmd->resp[0] = sdhci_readl(host, SDHCI_RESPONSE);
