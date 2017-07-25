@@ -439,6 +439,8 @@ struct sdhci_host {
 #define SDHCI_QUIRK2_NO_CRC_STRIPPING			(1<<16)
 /* Controller has bad caps bits, but really supports DMA */
 #define SDHCI_QUIRK2_FORCE_ADMA				(1<<17)
+/* Controller uses POWER_CONTROL for managing IO voltage and not core voltage */
+#define SDHCI_QUIRK2_BROKEN_POWER_CONTROL		(1<<18)
 
 	int irq;		/* Device IRQ */
 	void __iomem *ioaddr;	/* Mapped address */

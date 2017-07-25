@@ -1419,6 +1419,9 @@ static void sdhci_set_power_reg(struct sdhci_host *host, unsigned char mode,
 
 	mmc_regulator_set_ocr(mmc, mmc->supply.vmmc, vdd);
 
+	if (host->quirks2 & SDHCI_QUIRK2_BROKEN_POWER_CONTROL)
+		return;
+
 	if (mode != MMC_POWER_OFF)
 		sdhci_writeb(host, SDHCI_POWER_ON, SDHCI_POWER_CONTROL);
 	else
@@ -1429,6 +1432,9 @@ void sdhci_set_power_noreg(struct sdhci_host *host, unsigned char mode,
 			   unsigned short vdd)
 {
 	u8 pwr = 0;
+
+	if (host->quirks2 & SDHCI_QUIRK2_BROKEN_POWER_CONTROL)
+		return;
 
 	if (mode != MMC_POWER_OFF) {
 		switch (1 << vdd) {
