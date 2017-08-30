@@ -147,10 +147,6 @@
 #define OMAP_MMC_MAX_CLOCK	52000000
 #define DRIVER_NAME		"omap_hsmmc"
 
-#define VDD_1V8			1800000		/* 180000 uV */
-#define VDD_3V0			3000000		/* 300000 uV */
-#define VDD_165_195		(ffs(MMC_VDD_165_195) - 1)
-
 /*
  * One controller can have multiple slots, like on some omap boards using
  * omap.c controller driver. Luckily this is not currently done on any known
@@ -317,17 +313,6 @@ static int omap_hsmmc_set_pbias(struct omap_hsmmc_host *host, bool power_on,
 		return 0;
 
 	if (power_on) {
-		if (vdd <= VDD_165_195)
-			ret = regulator_set_voltage(host->pbias, VDD_1V8,
-						    VDD_1V8);
-		else
-			ret = regulator_set_voltage(host->pbias, VDD_3V0,
-						    VDD_3V0);
-		if (ret < 0) {
-			dev_err(host->dev, "pbias set voltage fail\n");
-			return ret;
-		}
-
 		if (host->pbias_enabled == 0) {
 			ret = regulator_enable(host->pbias);
 			if (ret) {
