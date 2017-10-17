@@ -2772,26 +2772,32 @@ static int its_force_quiescent(void __iomem *base)
 	}
 }
 
-static void __maybe_unused its_enable_quirk_cavium_22375(void *data)
+static bool __maybe_unused its_enable_quirk_cavium_22375(void *data)
 {
 	struct its_node *its = data;
 
 	its->flags |= ITS_FLAGS_WORKAROUND_CAVIUM_22375;
+
+	return true;
 }
 
-static void __maybe_unused its_enable_quirk_cavium_23144(void *data)
+static bool __maybe_unused its_enable_quirk_cavium_23144(void *data)
 {
 	struct its_node *its = data;
 
 	its->flags |= ITS_FLAGS_WORKAROUND_CAVIUM_23144;
+
+	return true;
 }
 
-static void __maybe_unused its_enable_quirk_qdf2400_e0065(void *data)
+static bool __maybe_unused its_enable_quirk_qdf2400_e0065(void *data)
 {
 	struct its_node *its = data;
 
 	/* On QDF2400, the size of the ITE is 16Bytes */
 	its->ite_size = 16;
+
+	return true;
 }
 
 static u64 its_irq_get_msi_base_pre_its(struct its_device *its_dev)
