@@ -22,6 +22,7 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
+#include <linux/platform_data/sdhci-omap.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/regulator/consumer.h>
@@ -102,6 +103,7 @@ struct sdhci_omap_data {
 };
 
 struct sdhci_omap_host {
+	char			*version;
 	void __iomem		*base;
 	struct device		*dev;
 	struct	regulator	*pbias;
@@ -781,10 +783,17 @@ static struct pinctrl_state
 				  u32 *caps, u32 capmask)
 {
 	struct device *dev = omap_host->dev;
+	char *version = omap_host->version;
 	struct pinctrl_state *pinctrl_state = ERR_PTR(-ENODEV);
+	char str[20];
 
 	if (!(*caps & capmask))
 		goto ret;
+
+	if (version) {
+		sprintf(str, "%s-%s", mode, version);
+		pinctrl_state = pinctrl_lookup_state(omap_host->pinctrl, str);
+	}
 
 	pinctrl_state = pinctrl_lookup_state(omap_host->pinctrl, mode);
 	if (IS_ERR(pinctrl_state)) {
@@ -879,6 +888,7 @@ static int sdhci_omap_probe(struct platform_device *pdev)
 	struct mmc_host *mmc;
 	const struct of_device_id *match;
 	struct sdhci_omap_data *data;
+	struct sdhci_omap_platform_data *platform_data;
 
 	match = of_match_device(omap_sdhci_match, dev);
 	if (!match)
@@ -912,6 +922,13 @@ static int sdhci_omap_probe(struct platform_device *pdev)
 	ret = mmc_of_parse(mmc);
 	if (ret)
 		goto err_pltfm_free;
+
+	platform_data = dev_get_platdata(dev);
+	if (platform_data) {
+		omap_host->version = platform_data->version;
+		if (platform_data->max_freq)
+			mmc->f_max = platform_data->max_freq;
+	}
 
 	pltfm_host->clk = devm_clk_get(dev, "fck");
 	if (IS_ERR(pltfm_host->clk)) {
