@@ -673,6 +673,27 @@ static void sdhci_adma_table_post(struct sdhci_host *host,
 	}
 }
 
+static void sdhci_calc_sw_timeout(struct sdhci_host *host,
+				  struct mmc_command *cmd,
+				  unsigned int target_timeout)
+{
+	struct mmc_host *mmc = host->mmc;
+	struct mmc_ios *ios = &mmc->ios;
+	struct mmc_data *data = cmd->data;
+	unsigned long long transfer_time;
+
+	if (data) {
+		transfer_time = MMC_BLOCK_TRANSFER_TIME_MS(data->blksz,
+							   ios->bus_width,
+							   ios->clock);
+		/* calculate timeout for the entire data */
+		host->data_timeout = (data->blocks * (target_timeout +
+						      transfer_time));
+	} else if (cmd->flags & MMC_RSP_BUSY) {
+		host->data_timeout = cmd->busy_timeout * MSEC_PER_SEC;
+	}
+}
+
 static u8 sdhci_calc_timeout(struct sdhci_host *host, struct mmc_command *cmd)
 {
 	u8 count;
@@ -732,8 +753,12 @@ static u8 sdhci_calc_timeout(struct sdhci_host *host, struct mmc_command *cmd)
 	}
 
 	if (count >= 0xF) {
-		DBG("Too large timeout 0x%x requested for CMD%d!\n",
-		    count, cmd->opcode);
+		DBG("Too large timeout.. using SW timeout for CMD%d!\n",
+		    cmd->opcode);
+		sdhci_calc_sw_timeout(host, cmd, target_timeout);
+		host->ier &= ~SDHCI_INT_DATA_TIMEOUT;
+		sdhci_writel(host, host->ier, SDHCI_INT_ENABLE);
+		sdhci_writel(host, host->ier, SDHCI_SIGNAL_ENABLE);
 		count = 0xE;
 	}
 
@@ -1197,6 +1222,14 @@ static void sdhci_read_rsp_136(struct sdhci_host *host, struct mmc_command *cmd)
 static void sdhci_finish_command(struct sdhci_host *host)
 {
 	struct mmc_command *cmd = host->cmd;
+
+	if (host->data_timeout) {
+		unsigned long timeout;
+
+		timeout = jiffies +
+			  msecs_to_jiffies(host->data_timeout);
+		sdhci_mod_timer(host, host->cmd->mrq, timeout);
+	}
 
 	host->cmd = NULL;
 
@@ -2341,6 +2374,10 @@ static bool sdhci_request_done(struct sdhci_host *host)
 		return true;
 	}
 
+	host->data_timeout = 0;
+	host->ier |= SDHCI_INT_DATA_TIMEOUT;
+	sdhci_writel(host, host->ier, SDHCI_INT_ENABLE);
+	sdhci_writel(host, host->ier, SDHCI_SIGNAL_ENABLE);
 	sdhci_del_timer(host, mrq);
 
 	/*
