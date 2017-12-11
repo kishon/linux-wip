@@ -332,6 +332,15 @@ struct sdhci_adma2_64_desc {
 /* Allow for a a command request and a data request at the same time */
 #define SDHCI_MAX_MRQS		2
 
+/*
+ * Time taken for transferring one block. It is multiplied by a constant
+ * factor '2' to account for any errors
+ */
+#define MMC_BLOCK_TRANSFER_TIME_MS(blksz, bus_width, freq)		\
+				   ((unsigned long long)		\
+				   (2 * (((blksz) * MSEC_PER_SEC *	\
+				   (8 / (bus_width))) / (freq))))
+
 enum sdhci_cookie {
 	COOKIE_UNMAPPED,
 	COOKIE_PRE_MAPPED,	/* mapped by sdhci_pre_req() */
@@ -545,6 +554,8 @@ struct sdhci_host {
 
 	/* Host SDMA buffer boundary. */
 	u32			sdma_boundary;
+
+	unsigned long long	data_timeout;
 
 	unsigned long private[0] ____cacheline_aligned;
 };
