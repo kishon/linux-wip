@@ -767,6 +767,10 @@ static const struct sdhci_pltfm_data sdhci_omap_pdata = {
 	.ops = &sdhci_omap_ops,
 };
 
+static const struct sdhci_omap_data k2g_data = {
+	.offset = 0x200,
+};
+
 static const struct sdhci_omap_data dra7_data = {
 	.offset = 0x200,
 	.flags	= SDHCI_OMAP_REQUIRE_IODELAY,
@@ -774,6 +778,7 @@ static const struct sdhci_omap_data dra7_data = {
 
 static const struct of_device_id omap_sdhci_match[] = {
 	{ .compatible = "ti,dra7-sdhci", .data = &dra7_data },
+	{ .compatible = "ti,k2g-sdhci", .data = &k2g_data },
 	{},
 };
 MODULE_DEVICE_TABLE(of, omap_sdhci_match);
@@ -882,6 +887,7 @@ static int sdhci_omap_probe(struct platform_device *pdev)
 	int ret;
 	u32 offset;
 	struct device *dev = &pdev->dev;
+	struct device_node *node = dev->of_node;
 	struct sdhci_host *host;
 	struct sdhci_pltfm_host *pltfm_host;
 	struct sdhci_omap_host *omap_host;
@@ -907,6 +913,9 @@ static int sdhci_omap_probe(struct platform_device *pdev)
 		dev_err(dev, "Failed sdhci_pltfm_init\n");
 		return PTR_ERR(host);
 	}
+
+	if (of_device_is_compatible(node, "ti,k2g-sdhci"))
+		host->quirks2 |= SDHCI_QUIRK2_NO_1_8_V;
 
 	pltfm_host = sdhci_priv(host);
 	omap_host = sdhci_pltfm_priv(pltfm_host);
