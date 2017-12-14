@@ -11,8 +11,8 @@
 #include "dra74x.dtsi"
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/interrupt-controller/irq.h>
-#include "am57xx-idk-common.dtsi"
 #include "dra74x-mmc-iodelay.dtsi"
+#include "am57xx-idk-common.dtsi"
 
 / {
 	model = "TI AM5728 IDK";
