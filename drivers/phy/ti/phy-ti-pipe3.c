@@ -56,6 +56,12 @@
 
 #define SATA_PLL_SOFT_RESET	BIT(18)
 
+#define PHY_RX_ANA_PRGRAMMABILITY_REG	0xC
+#define MEM_EN_PLLBYP			BIT(7)
+
+#define PHY_TX_TEST_CONFIG		0x2C
+#define MEM_ENTESTCLK			BIT(31)
+
 #define PIPE3_PHY_PWRCTL_CLK_CMD_MASK	0x003FC000
 #define PIPE3_PHY_PWRCTL_CLK_CMD_SHIFT	14
 
@@ -110,6 +116,10 @@
 #define PLL_IDLE_TIME	100	/* in milliseconds */
 #define PLL_LOCK_TIME	100	/* in milliseconds */
 
+#define PIPE3_PHY_DISABLE_SYNC_POWER	BIT(4)
+
+#define CONFIGURE_AS_PCIE		BIT(0)
+
 struct pipe3_dpll_params {
 	u16	m;
 	u8	n;
@@ -141,6 +151,7 @@ struct ti_pipe3 {
 	unsigned int		power_reg; /* power reg. index within syscon */
 	unsigned int		pcie_pcs_reg; /* pcs reg. index in syscon */
 	bool			sata_refclk_enabled;
+	u32			flags;
 };
 
 static struct pipe3_dpll_map dpll_map_usb[] = {
@@ -233,11 +244,22 @@ static int ti_pipe3_power_on(struct phy *x)
 	rate = rate / 1000000;
 	mask = OMAP_CTRL_PIPE3_PHY_PWRCTL_CLK_CMD_MASK |
 		  OMAP_CTRL_PIPE3_PHY_PWRCTL_CLK_FREQ_MASK;
-	val = PIPE3_PHY_TX_RX_POWERON << PIPE3_PHY_PWRCTL_CLK_CMD_SHIFT;
+	val = PIPE3_PHY_TX_RX_POWERON;
+	if (phy->flags & CONFIGURE_AS_PCIE)
+		val |= PIPE3_PHY_DISABLE_SYNC_POWER;
+	val <<= PIPE3_PHY_PWRCTL_CLK_CMD_SHIFT;
 	val |= rate << OMAP_CTRL_PIPE3_PHY_PWRCTL_CLK_FREQ_SHIFT;
 
 	ret = regmap_update_bits(phy->phy_power_syscon, phy->power_reg,
 				 mask, val);
+
+	if (phy->flags & CONFIGURE_AS_PCIE) {
+		ret = regmap_update_bits(phy->phy_power_syscon, phy->power_reg,
+					 mask, val);
+		if (ret < 0)
+			return ret;
+	}
+
 	return ret;
 }
 
@@ -335,6 +357,19 @@ static int ti_pipe3_init(struct phy *x)
 	int ret = 0;
 
 	ti_pipe3_enable_clocks(phy);
+
+	if (phy->flags & CONFIGURE_AS_PCIE) {
+		val = ti_pipe3_readl(phy->phy_rx,
+				     PHY_RX_ANA_PRGRAMMABILITY_REG);
+		val |= MEM_EN_PLLBYP;
+		ti_pipe3_writel(phy->phy_rx, PHY_RX_ANA_PRGRAMMABILITY_REG,
+				val);
+		val = ti_pipe3_readl(phy->phy_tx, PHY_TX_TEST_CONFIG);
+		val |= MEM_ENTESTCLK;
+		ti_pipe3_writel(phy->phy_tx, PHY_TX_TEST_CONFIG, val);
+		return 0;
+	}
+
 	/*
 	 * Set pcie_pcs register to 0x96 for proper functioning of phy
 	 * as recommended in AM572x TRM SPRUHZ6, section 18.5.2.2, table
@@ -395,7 +430,8 @@ static int ti_pipe3_exit(struct phy *x)
 		return 0;
 
 	/* PCIe doesn't have internal DPLL */
-	if (!of_device_is_compatible(phy->dev->of_node, "ti,phy-pipe3-pcie")) {
+	if (!of_device_is_compatible(phy->dev->of_node, "ti,phy-pipe3-pcie") &&
+	    !(phy->flags & CONFIGURE_AS_PCIE)) {
 		/* Put DPLL in IDLE mode */
 		val = ti_pipe3_readl(phy->pll_ctrl_base, PLL_CONFIGURATION2);
 		val |= PLL_IDLE;
@@ -589,11 +625,7 @@ static int ti_pipe3_get_tx_rx_base(struct ti_pipe3 *phy)
 {
 	struct resource *res;
 	struct device *dev = phy->dev;
-	struct device_node *node = dev->of_node;
 	struct platform_device *pdev = to_platform_device(dev);
-
-	if (!of_device_is_compatible(node, "ti,phy-pipe3-pcie"))
-		return 0;
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
 					   "phy_rx");
@@ -665,6 +697,9 @@ static int ti_pipe3_probe(struct platform_device *pdev)
 	ret = ti_pipe3_get_clk(phy);
 	if (ret)
 		return ret;
+
+	if (of_property_read_bool(node, "ti,configure-as-pcie"))
+		phy->flags |= CONFIGURE_AS_PCIE;
 
 	platform_set_drvdata(pdev, phy);
 	pm_runtime_enable(dev);
