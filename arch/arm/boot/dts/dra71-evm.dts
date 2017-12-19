@@ -273,3 +273,20 @@
 &extcon_usb2 {
 	vbus-gpio = <&pcf_lcd 15 GPIO_ACTIVE_HIGH>;
 };
+
+&usb3_phy1 {
+	status = "okay";
+	ti,configure-as-pcie;
+};
+
+&pcie1_rc {
+	num-lanes = <2>;
+	phys = <&pcie1_phy>, <&usb3_phy1>;
+	phy-names = "pcie-phy0", "pcie-phy1";
+};
+
+&pcie1_ep {
+	num-lanes = <2>;
+	phys = <&pcie1_phy>, <&usb3_phy1>;
+	phy-names = "pcie-phy0", "pcie-phy1";
+};
