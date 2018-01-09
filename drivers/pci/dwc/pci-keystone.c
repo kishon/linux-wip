@@ -147,29 +147,29 @@ static int ks_pcie_get_irq_controller_info(struct keystone_pcie *ks_pcie,
 {
 	int temp, max_host_irqs, legacy = 1, *host_irqs;
 	struct device *dev = ks_pcie->pci->dev;
-	struct device_node *np_pcie = dev->of_node, **np_temp;
+	struct device_node *np_pcie = dev->of_node, **intc_np;
 
 	if (!strcmp(controller, "msi-interrupt-controller"))
 		legacy = 0;
 
 	if (legacy) {
-		np_temp = &ks_pcie->legacy_intc_np;
+		intc_np = &ks_pcie->legacy_intc_np;
 		max_host_irqs = PCI_NUM_INTX;
 		host_irqs = &ks_pcie->legacy_host_irqs[0];
 	} else {
-		np_temp = &ks_pcie->msi_intc_np;
+		intc_np = &ks_pcie->msi_intc_np;
 		max_host_irqs = MAX_MSI_HOST_IRQS;
 		host_irqs =  &ks_pcie->msi_host_irqs[0];
 	}
 
 	/* interrupt controller is in a child node */
-	*np_temp = of_find_node_by_name(np_pcie, controller);
+	*intc_np = of_find_node_by_name(np_pcie, controller);
 	if (!(*np_temp)) {
 		dev_err(dev, "Node for %s is absent\n", controller);
 		return -EINVAL;
 	}
 
-	temp = of_irq_count(*np_temp);
+	temp = of_irq_count(*intc_np);
 	if (!temp) {
 		dev_err(dev, "No IRQ entries in %s\n", controller);
 		return -EINVAL;
