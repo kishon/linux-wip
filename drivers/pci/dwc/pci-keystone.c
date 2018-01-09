@@ -143,58 +143,54 @@ static void ks_pcie_legacy_irq_handler(struct irq_desc *desc)
 }
 
 static int ks_pcie_get_irq_controller_info(struct keystone_pcie *ks_pcie,
-					   char *controller, int *num_irqs)
+					   bool legacy)
 {
-	int temp, max_host_irqs, legacy = 1, *host_irqs;
+	int i;
+	char *controller;
+	int irq_count;
+	int *num_irqs, **host_irqs;
 	struct device *dev = ks_pcie->pci->dev;
-	struct device_node *np_pcie = dev->of_node, **intc_np;
-
-	if (!strcmp(controller, "msi-interrupt-controller"))
-		legacy = 0;
+	struct device_node *node = dev->of_node, **intc_np;
 
 	if (legacy) {
 		intc_np = &ks_pcie->legacy_intc_np;
-		max_host_irqs = PCI_NUM_INTX;
-		host_irqs = &ks_pcie->legacy_host_irqs[0];
+		host_irqs = &ks_pcie->legacy_host_irqs;
+		num_irqs = &ks_pcie->num_legacy_host_irqs;
+		controller = "legacy-interrupt-controller";
 	} else {
 		intc_np = &ks_pcie->msi_intc_np;
-		max_host_irqs = MAX_MSI_HOST_IRQS;
-		host_irqs =  &ks_pcie->msi_host_irqs[0];
+		host_irqs =  &ks_pcie->msi_host_irqs;
+		num_irqs = &ks_pcie->num_msi_host_irqs;
+		controller = "msi-interrupt-controller";
 	}
 
 	/* interrupt controller is in a child node */
-	*intc_np = of_find_node_by_name(np_pcie, controller);
+	*intc_np = of_find_node_by_name(node, controller);
 	if (!(*intc_np)) {
 		dev_err(dev, "Node for %s is absent\n", controller);
 		return -EINVAL;
 	}
 
-	temp = of_irq_count(*intc_np);
-	if (!temp) {
+	irq_count = of_irq_count(*intc_np);
+	if (!irq_count) {
 		dev_err(dev, "No IRQ entries in %s\n", controller);
 		return -EINVAL;
 	}
 
-	if (temp > max_host_irqs)
-		dev_warn(dev, "Too many %s interrupts defined %u\n",
-			(legacy ? "legacy" : "MSI"), temp);
+	*host_irqs = devm_kzalloc(dev, sizeof(**host_irqs) * irq_count,
+				  GFP_KERNEL);
+	if (!(*host_irqs))
+		return -ENOMEM;
 
-	/*
-	 * support upto max_host_irqs. In dt from index 0 to 3 (legacy) or 0 to
-	 * 7 (MSI)
-	 */
-	for (temp = 0; temp < max_host_irqs; temp++) {
-		host_irqs[temp] = irq_of_parse_and_map(*intc_np, temp);
-		if (!host_irqs[temp])
-			break;
+	for (i = 0; i < irq_count; i++) {
+		(*host_irqs)[i] = irq_of_parse_and_map(*intc_np, i);
+		if (!(*host_irqs)[i])
+			return -EINVAL;
 	}
 
-	if (temp) {
-		*num_irqs = temp;
-		return 0;
-	}
+	*num_irqs = irq_count;
 
-	return -EINVAL;
+	return 0;
 }
 
 static void ks_pcie_setup_interrupts(struct keystone_pcie *ks_pcie)
@@ -293,15 +289,11 @@ static int __init ks_add_pcie_port(struct keystone_pcie *ks_pcie,
 	struct device *dev = &pdev->dev;
 	int ret;
 
-	ret = ks_pcie_get_irq_controller_info(ks_pcie,
-					"legacy-interrupt-controller",
-					&ks_pcie->num_legacy_host_irqs);
+	ret = ks_pcie_get_irq_controller_info(ks_pcie, true);
 	if (ret)
 		return ret;
 
-	ret = ks_pcie_get_irq_controller_info(ks_pcie,
-					      "msi-interrupt-controller",
-					      &ks_pcie->num_msi_host_irqs);
+	ret = ks_pcie_get_irq_controller_info(ks_pcie, false);
 	if (ret)
 		return ret;
 

@@ -12,19 +12,17 @@
  * published by the Free Software Foundation.
  */
 
-#define MAX_MSI_HOST_IRQS		8
-
 struct keystone_pcie {
 	struct dw_pcie		*pci;
 	struct	clk		*clk;
 	/* PCI Device ID */
 	u32			device_id;
 	int			num_legacy_host_irqs;
-	int			legacy_host_irqs[PCI_NUM_INTX];
+	int			*legacy_host_irqs;
 	struct			device_node *legacy_intc_np;
 
 	int			num_msi_host_irqs;
-	int			msi_host_irqs[MAX_MSI_HOST_IRQS];
+	int			*msi_host_irqs;
 	struct			device_node *msi_intc_np;
 	struct irq_domain	*legacy_irq_domain;
 	struct device_node	*np;
