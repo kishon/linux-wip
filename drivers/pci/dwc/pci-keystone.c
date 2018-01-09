@@ -184,7 +184,7 @@ static int ks_pcie_get_irq_controller_info(struct keystone_pcie *ks_pcie,
 	 * 7 (MSI)
 	 */
 	for (temp = 0; temp < max_host_irqs; temp++) {
-		host_irqs[temp] = irq_of_parse_and_map(*np_temp, temp);
+		host_irqs[temp] = irq_of_parse_and_map(*intc_np, temp);
 		if (!host_irqs[temp])
 			break;
 	}
