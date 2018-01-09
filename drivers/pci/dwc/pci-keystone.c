@@ -164,7 +164,7 @@ static int ks_pcie_get_irq_controller_info(struct keystone_pcie *ks_pcie,
 
 	/* interrupt controller is in a child node */
 	*intc_np = of_find_node_by_name(np_pcie, controller);
-	if (!(*np_temp)) {
+	if (!(*intc_np)) {
 		dev_err(dev, "Node for %s is absent\n", controller);
 		return -EINVAL;
 	}
