@@ -92,7 +92,6 @@ config PCI_KEYSTONE
 	depends on PCI
 	depends on ARCH_KEYSTONE
 	depends on PCI_MSI_IRQ_DOMAIN
-	select PCIEPORTBUS
 	select PCIE_DW_HOST
 	help
 	  Say Y here if you want to enable PCI controller support on Keystone
