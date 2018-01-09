@@ -121,21 +121,13 @@ static void ks_pcie_msi_irq_handler(struct irq_desc *desc)
 	chained_irq_exit(chip, desc);
 }
 
-/**
- * ks_pcie_legacy_irq_handler() - Handle legacy interrupt
- * @irq: IRQ line for legacy interrupts
- * @desc: Pointer to irq descriptor
- *
- * Traverse through pending legacy interrupts and invoke handler for each. Also
- * takes care of interrupt controller level mask/ack operation.
- */
 static void ks_pcie_legacy_irq_handler(struct irq_desc *desc)
 {
 	unsigned int irq = irq_desc_get_irq(desc);
 	struct keystone_pcie *ks_pcie = irq_desc_get_handler_data(desc);
 	struct dw_pcie *pci = ks_pcie->pci;
 	struct device *dev = pci->dev;
-	u32 irq_offset = irq - ks_pcie->legacy_host_irqs[0];
+	u32 offset = irq - ks_pcie->legacy_host_irqs[0];
 	struct irq_chip *chip = irq_desc_get_chip(desc);
 
 	dev_dbg(dev, ": Handling legacy irq %d\n", irq);
@@ -146,7 +138,7 @@ static void ks_pcie_legacy_irq_handler(struct irq_desc *desc)
 	 * ack operation.
 	 */
 	chained_irq_enter(chip, desc);
-	ks_dw_pcie_handle_legacy_irq(ks_pcie, irq_offset);
+	ks_dw_pcie_handle_legacy_irq(ks_pcie, offset);
 	chained_irq_exit(chip, desc);
 }
 
