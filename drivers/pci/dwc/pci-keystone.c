@@ -1,16 +1,7 @@
-/*
- * PCIe host controller driver for Texas Instruments Keystone SoCs
- *
- * Copyright (C) 2013-2014 Texas Instruments., Ltd.
- *		http://www.ti.com
- *
- * Author: Murali Karicheri <m-karicheri2@ti.com>
- * Implementation based on pci-exynos.c and pcie-designware.c
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- */
+// SPDX-License-Identifier: GPL-2.0
+// Copyright (c) 2018 Texas Instruments
+// PCIe host controller driver for Texas Instruments Keystone SoCs.
+// Author:  Murali Karicheri <m-karicheri2@ti.com>
 
 #include <linux/clk.h>
 #include <linux/delay.h>
@@ -37,7 +28,13 @@
 
 #define to_keystone_pcie(x)	dev_get_drvdata((x)->dev)
 
-static void quirk_limit_mrrs(struct pci_dev *dev)
+/*
+ * Keystone PCI controller has a h/w limitation of
+ * 256 bytes maximum read request size. It can't handle
+ * anything higher than this. So force this limit on
+ * all downstream devices.
+ */
+static void ks_pcie_quirk(struct pci_dev *dev)
 {
 	struct pci_bus *bus = dev->bus;
 	struct pci_dev *bridge;
@@ -65,12 +62,6 @@ static void quirk_limit_mrrs(struct pci_dev *dev)
 	if (!bridge)
 		return;
 
-	/*
-	 * Keystone PCI controller has a h/w limitation of
-	 * 256 bytes maximum read request size.  It can't handle
-	 * anything higher than this.  So force this limit on
-	 * all downstream devices.
-	 */
 	if (pci_match_id(rc_pci_devids, bridge)) {
 		if (pcie_get_readrq(dev) > 256) {
 			dev_info(&dev->dev, "limiting MRRS to 256\n");
@@ -78,7 +69,7 @@ static void quirk_limit_mrrs(struct pci_dev *dev)
 		}
 	}
 }
-DECLARE_PCI_FIXUP_ENABLE(PCI_ANY_ID, PCI_ANY_ID, quirk_limit_mrrs);
+DECLARE_PCI_FIXUP_ENABLE(PCI_ANY_ID, PCI_ANY_ID, ks_pcie_quirk);
 
 static void ks_pcie_msi_irq_handler(struct irq_desc *desc)
 {
@@ -91,11 +82,6 @@ static void ks_pcie_msi_irq_handler(struct irq_desc *desc)
 
 	dev_dbg(dev, "%s, irq %d\n", __func__, irq);
 
-	/*
-	 * The chained irq handler installation would have replaced normal
-	 * interrupt driver handler so we need to take care of mask/unmask and
-	 * ack operation.
-	 */
 	chained_irq_enter(chip, desc);
 	ks_dw_pcie_handle_msi_irq(ks_pcie, offset);
 	chained_irq_exit(chip, desc);
@@ -112,11 +98,6 @@ static void ks_pcie_legacy_irq_handler(struct irq_desc *desc)
 
 	dev_dbg(dev, ": Handling legacy irq %d\n", irq);
 
-	/*
-	 * The chained irq handler installation would have replaced normal
-	 * interrupt driver handler so we need to take care of mask/unmask and
-	 * ack operation.
-	 */
 	chained_irq_enter(chip, desc);
 	ks_dw_pcie_handle_legacy_irq(ks_pcie, offset);
 	chained_irq_exit(chip, desc);
@@ -144,7 +125,6 @@ static int ks_pcie_get_irq_controller_info(struct keystone_pcie *ks_pcie,
 		controller = "msi-interrupt-controller";
 	}
 
-	/* interrupt controller is in a child node */
 	*intc_np = of_find_node_by_name(np, controller);
 	if (!(*intc_np)) {
 		dev_err(dev, "Node for %s is absent\n", controller);
@@ -191,9 +171,6 @@ static void ks_pcie_setup_interrupts(struct keystone_pcie *ks_pcie)
 						 ks_pcie_msi_irq_handler,
 						 ks_pcie);
 	}
-
-	if (ks_pcie->error_irq > 0)
-		ks_dw_pcie_enable_error_irq(ks_pcie);
 }
 
 /*
@@ -201,7 +178,7 @@ static void ks_pcie_setup_interrupts(struct keystone_pcie *ks_pcie)
  * bus error instead of returning 0xffffffff. This handler always returns 0
  * for this kind of faults.
  */
-static int keystone_pcie_fault(unsigned long addr, unsigned int fsr,
+static int ks_pcie_fault(unsigned long addr, unsigned int fsr,
 				struct pt_regs *regs)
 {
 	unsigned long instr = *(unsigned long *) instruction_pointer(regs);
@@ -236,7 +213,7 @@ static int __init ks_pcie_host_init(struct pcie_port *pp)
 	 * PCIe access errors that result into OCP errors are caught by ARM as
 	 * "External aborts"
 	 */
-	hook_fault_code(17, keystone_pcie_fault, SIGBUS, 0,
+	hook_fault_code(17, ks_pcie_fault, SIGBUS, 0,
 			"Asynchronous external abort");
 
 	ks_dw_pcie_start_link(pci);
@@ -258,7 +235,7 @@ static const struct dw_pcie_host_ops ks_pcie_host_ops = {
 	.scan_bus = ks_dw_pcie_v3_65_scan_bus,
 };
 
-static irqreturn_t pcie_err_irq_handler(int irq, void *priv)
+static irqreturn_t ks_pcie_err_handler(int irq, void *priv)
 {
 	struct keystone_pcie *ks_pcie = priv;
 
@@ -294,7 +271,7 @@ static int __init ks_add_pcie_port(struct keystone_pcie *ks_pcie,
 	return 0;
 }
 
-static const struct dw_pcie_ops dw_pcie_ops = {
+static const struct dw_pcie_ops ks_pcie_dw_pcie_ops = {
 	.start_link = ks_dw_pcie_start_link,
 	.stop_link = ks_dw_pcie_stop_link,
 	.link_up = ks_dw_pcie_link_up,
@@ -360,15 +337,11 @@ static int __init ks_pcie_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	pci->dev = dev;
-	pci->ops = &dw_pcie_ops;
+	pci->ops = &ks_pcie_dw_pcie_ops;
 
 	ks_pcie = devm_kzalloc(dev, sizeof(*ks_pcie), GFP_KERNEL);
 	if (!ks_pcie)
 		return -ENOMEM;
-
-        ret = of_property_read_u32(np, "num-lanes", &num_lanes);
-        if (ret)
-                num_lanes = 1;
 
         ret = of_property_read_u32(np, "num-lanes", &num_lanes);
         if (ret)
@@ -453,14 +426,16 @@ static int __init ks_pcie_probe(struct platform_device *pdev)
 		goto err_get_sync;
 	}
 	
-	ret = devm_request_irq(dev, irq, pcie_err_irq_handler, IRQF_SHARED,
+	ret = devm_request_irq(dev, irq, ks_pcie_err_handler, IRQF_SHARED,
 			       "ks-pcie-error-irq", ks_pcie);
 	if (ret < 0) {
 		dev_err(dev, "failed to request error IRQ %d\n", irq);
 		goto err_get_sync;
 	}
+	ks_dw_pcie_enable_error_irq(ks_pcie);
 
 	platform_set_drvdata(pdev, ks_pcie);
+
 	ret = ks_add_pcie_port(ks_pcie, pdev);
 	if (ret < 0)
 		goto err_get_sync;
@@ -507,10 +482,10 @@ static const struct of_device_id ks_pcie_of_match[] = {
 };
 
 static struct platform_driver ks_pcie_driver __refdata = {
+	.probe  = ks_pcie_probe,
 	.driver = {
-		.name	= "keystone-pcie",
+		.name = "keystone-pcie",
 		.of_match_table = of_match_ptr(ks_pcie_of_match),
-		.suppress_bind_attrs = true,
 	},
 };
-builtin_platform_driver_probe(ks_pcie_driver, ks_pcie_probe);
+builtin_platform_driver(ks_pcie_driver);
