@@ -32,8 +32,8 @@
 #include "pcie-designware.h"
 #include "pci-keystone.h"
 
-#define PCIE_VENDORID_MASK 0xffff
-#define PCIE_DEVID_SHIFT 16
+#define PCIE_VENDORID_MASK	0xffff
+#define PCIE_DEVICEID_SHIFT	16
 
 #define to_keystone_pcie(x)	dev_get_drvdata((x)->dev)
 
@@ -79,26 +79,6 @@ static void quirk_limit_mrrs(struct pci_dev *dev)
 	}
 }
 DECLARE_PCI_FIXUP_ENABLE(PCI_ANY_ID, PCI_ANY_ID, quirk_limit_mrrs);
-
-static int ks_pcie_establish_link(struct keystone_pcie *ks_pcie)
-{
-	struct dw_pcie *pci = ks_pcie->pci;
-	struct device *dev = pci->dev;
-
-	if (dw_pcie_link_up(pci)) {
-		dev_err(dev, "Link already up\n");
-		return 0;
-	}
-
-	ks_dw_pcie_initiate_link_train(ks_pcie);
-
-	/* check if the link is up or not */
-	if (!dw_pcie_wait_for_link(pci))
-		return 0;
-
-	dev_err(dev, "phy link never came up\n");
-	return -ETIMEDOUT;
-}
 
 static void ks_pcie_msi_irq_handler(struct irq_desc *desc)
 {
@@ -242,8 +222,6 @@ static int __init ks_pcie_host_init(struct pcie_port *pp)
 	struct keystone_pcie *ks_pcie = to_keystone_pcie(pci);
 
 	dw_pcie_setup_rc(pp);
-
-	ks_pcie_establish_link(ks_pcie);
 	ks_dw_pcie_setup_rc_app_regs(ks_pcie);
 	ks_pcie_setup_interrupts(ks_pcie);
 	writew(PCI_IO_RANGE_TYPE_32 | (PCI_IO_RANGE_TYPE_32 << 8),
@@ -251,7 +229,8 @@ static int __init ks_pcie_host_init(struct pcie_port *pp)
 
         dw_pcie_writew_dbi(pci, PCI_VENDOR_ID,
 			   ks_pcie->id & PCIE_VENDORID_MASK);
-        dw_pcie_writew_dbi(pci, PCI_DEVICE_ID, ks_pcie->id >> PCIE_DEVID_SHIFT);
+        dw_pcie_writew_dbi(pci, PCI_DEVICE_ID,
+			   ks_pcie->id >> PCIE_DEVICEID_SHIFT);
 
 	/*
 	 * PCIe access errors that result into OCP errors are caught by ARM as
@@ -260,10 +239,14 @@ static int __init ks_pcie_host_init(struct pcie_port *pp)
 	hook_fault_code(17, keystone_pcie_fault, SIGBUS, 0,
 			"Asynchronous external abort");
 
+	ks_dw_pcie_start_link(pci);
+	if (!dw_pcie_wait_for_link(pci))
+		return 0;
+
 	return 0;
 }
 
-static const struct dw_pcie_host_ops keystone_pcie_host_ops = {
+static const struct dw_pcie_host_ops ks_pcie_host_ops = {
 	.rd_other_conf = ks_dw_pcie_rd_other_conf,
 	.wr_other_conf = ks_dw_pcie_wr_other_conf,
 	.host_init = ks_pcie_host_init,
@@ -301,7 +284,7 @@ static int __init ks_add_pcie_port(struct keystone_pcie *ks_pcie,
 		return ret;
 
 	pp->root_bus_nr = -1;
-	pp->ops = &keystone_pcie_host_ops;
+	pp->ops = &ks_pcie_host_ops;
 	ret = ks_dw_pcie_host_init(ks_pcie);
 	if (ret) {
 		dev_err(dev, "failed to initialize host\n");
@@ -311,26 +294,11 @@ static int __init ks_add_pcie_port(struct keystone_pcie *ks_pcie,
 	return 0;
 }
 
-static const struct of_device_id ks_pcie_of_match[] = {
-	{
-		.type = "pci",
-		.compatible = "ti,keystone-pcie",
-	},
-	{ },
-};
-
 static const struct dw_pcie_ops dw_pcie_ops = {
+	.start_link = ks_dw_pcie_start_link,
+	.stop_link = ks_dw_pcie_stop_link,
 	.link_up = ks_dw_pcie_link_up,
 };
-
-static int __exit ks_pcie_remove(struct platform_device *pdev)
-{
-	struct keystone_pcie *ks_pcie = platform_get_drvdata(pdev);
-
-	clk_disable_unprepare(ks_pcie->clk);
-
-	return 0;
-}
 
 static void ks_pcie_disable_phy(struct keystone_pcie *ks_pcie)
 {
@@ -514,12 +482,34 @@ err_link:
 	return ret;
 }
 
+void ks_pcie_shutdown(struct platform_device *pdev)
+{
+	struct device *dev = &pdev->dev;
+	struct keystone_pcie *ks_pcie = dev_get_drvdata(dev);
+	int ret;
+
+	ks_dw_pcie_stop_link(ks_pcie->pci);
+
+	ret = pm_runtime_put_sync(dev);
+	if (ret < 0)
+		dev_dbg(dev, "pm_runtime_put_sync failed\n");
+
+	pm_runtime_disable(dev);
+	ks_pcie_disable_phy(ks_pcie);
+}
+
+static const struct of_device_id ks_pcie_of_match[] = {
+	{
+		.type = "pci",
+		.compatible = "ti,keystone-pcie",
+	},
+	{},
+};
+
 static struct platform_driver ks_pcie_driver __refdata = {
-	.probe  = ks_pcie_probe,
-	.remove = __exit_p(ks_pcie_remove),
 	.driver = {
 		.name	= "keystone-pcie",
 		.of_match_table = of_match_ptr(ks_pcie_of_match),
 	},
 };
-builtin_platform_driver(ks_pcie_driver);
+builtin_platform_driver_probe(ks_pcie_driver, ks_pcie_probe);

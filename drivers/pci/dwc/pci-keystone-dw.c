@@ -423,17 +423,31 @@ int ks_dw_pcie_link_up(struct dw_pcie *pci)
 	return (val & LTSSM_STATE_MASK) == LTSSM_STATE_L0;
 }
 
-void ks_dw_pcie_initiate_link_train(struct keystone_pcie *ks_pcie)
+int ks_dw_pcie_start_link(struct dw_pcie *pci)
 {
 	u32 val;
+	struct device *dev = pci->dev;
+	struct keystone_pcie *ks_pcie = to_keystone_pcie(pci);
 
-	/* Disable Link training */
+        if (dw_pcie_link_up(pci)) {
+                dev_err(dev, "Link already up\n");
+                return 0;
+        }
+
+	val = ks_dw_app_readl(ks_pcie, CMD_STATUS);
+	val |= LTSSM_EN_VAL;
+	ks_dw_app_writel(ks_pcie, CMD_STATUS, val);
+
+	return 0;
+}
+
+void ks_dw_pcie_stop_link(struct dw_pcie *pci)
+{
+	u32 val;
+	struct keystone_pcie *ks_pcie = to_keystone_pcie(pci);
+
 	val = ks_dw_app_readl(ks_pcie, CMD_STATUS);
 	val &= ~LTSSM_EN_VAL;
-	ks_dw_app_writel(ks_pcie, CMD_STATUS, LTSSM_EN_VAL | val);
-
-	/* Initiate Link Training */
-	val = ks_dw_app_readl(ks_pcie, CMD_STATUS);
 	ks_dw_app_writel(ks_pcie, CMD_STATUS, LTSSM_EN_VAL | val);
 }
 
