@@ -510,6 +510,7 @@ static struct platform_driver ks_pcie_driver __refdata = {
 	.driver = {
 		.name	= "keystone-pcie",
 		.of_match_table = of_match_ptr(ks_pcie_of_match),
+		.suppress_bind_attrs = true,
 	},
 };
 builtin_platform_driver_probe(ks_pcie_driver, ks_pcie_probe);
