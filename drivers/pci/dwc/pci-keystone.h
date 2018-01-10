@@ -13,10 +13,14 @@
  */
 
 struct keystone_pcie {
+	u32			id;
+	struct device_node	*np;
 	struct dw_pcie		*pci;
-	struct	clk		*clk;
-	/* PCI Device ID */
-	u32			device_id;
+	struct clk		*clk;
+	int			num_lanes;
+	struct phy		**phy;
+	struct device_link	**link;
+
 	int			num_legacy_host_irqs;
 	int			*legacy_host_irqs;
 	struct			device_node *legacy_intc_np;
@@ -25,7 +29,6 @@ struct keystone_pcie {
 	int			*msi_host_irqs;
 	struct			device_node *msi_intc_np;
 	struct irq_domain	*legacy_irq_domain;
-	struct device_node	*np;
 
 	int error_irq;
 

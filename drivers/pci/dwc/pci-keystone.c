@@ -12,28 +12,28 @@
  * published by the Free Software Foundation.
  */
 
-#include <linux/irqchip/chained_irq.h>
 #include <linux/clk.h>
 #include <linux/delay.h>
-#include <linux/interrupt.h>
-#include <linux/irqdomain.h>
 #include <linux/init.h>
+#include <linux/interrupt.h>
+#include <linux/irqchip/chained_irq.h>
+#include <linux/irqdomain.h>
+#include <linux/mfd/syscon.h>
 #include <linux/msi.h>
-#include <linux/of_irq.h>
 #include <linux/of.h>
+#include <linux/of_irq.h>
 #include <linux/of_pci.h>
-#include <linux/platform_device.h>
 #include <linux/phy/phy.h>
+#include <linux/platform_device.h>
+#include <linux/regmap.h>
 #include <linux/resource.h>
 #include <linux/signal.h>
 
 #include "pcie-designware.h"
 #include "pci-keystone.h"
 
-#define DRIVER_NAME	"keystone-pcie"
-
-/* DEV_STAT_CTRL */
-#define PCIE_CAP_BASE		0x70
+#define PCIE_VENDORID_MASK 0xffff
+#define PCIE_DEVID_SHIFT 16
 
 #define to_keystone_pcie(x)	dev_get_drvdata((x)->dev)
 
@@ -150,7 +150,7 @@ static int ks_pcie_get_irq_controller_info(struct keystone_pcie *ks_pcie,
 	int irq_count;
 	int *num_irqs, **host_irqs;
 	struct device *dev = ks_pcie->pci->dev;
-	struct device_node *node = dev->of_node, **intc_np;
+	struct device_node *np = ks_pcie->np, **intc_np;
 
 	if (legacy) {
 		intc_np = &ks_pcie->legacy_intc_np;
@@ -165,7 +165,7 @@ static int ks_pcie_get_irq_controller_info(struct keystone_pcie *ks_pcie,
 	}
 
 	/* interrupt controller is in a child node */
-	*intc_np = of_find_node_by_name(node, controller);
+	*intc_np = of_find_node_by_name(np, controller);
 	if (!(*intc_np)) {
 		dev_err(dev, "Node for %s is absent\n", controller);
 		return -EINVAL;
@@ -249,8 +249,9 @@ static int __init ks_pcie_host_init(struct pcie_port *pp)
 	writew(PCI_IO_RANGE_TYPE_32 | (PCI_IO_RANGE_TYPE_32 << 8),
 			pci->dbi_base + PCI_IO_BASE);
 
-	/* update the Vendor ID */
-	writew(ks_pcie->device_id, pci->dbi_base + PCI_DEVICE_ID);
+        dw_pcie_writew_dbi(pci, PCI_VENDOR_ID,
+			   ks_pcie->id & PCIE_VENDORID_MASK);
+        dw_pcie_writew_dbi(pci, PCI_DEVICE_ID, ks_pcie->id >> PCIE_DEVID_SHIFT);
 
 	/*
 	 * PCIe access errors that result into OCP errors are caught by ARM as
@@ -289,30 +290,15 @@ static int __init ks_add_pcie_port(struct keystone_pcie *ks_pcie,
 	struct device *dev = &pdev->dev;
 	int ret;
 
+	/* Get legacy interrupt controller info */
 	ret = ks_pcie_get_irq_controller_info(ks_pcie, true);
 	if (ret)
 		return ret;
 
+	/* Get MSI interrupt controller info */
 	ret = ks_pcie_get_irq_controller_info(ks_pcie, false);
 	if (ret)
 		return ret;
-
-	/*
-	 * Index 0 is the platform interrupt for error interrupt
-	 * from RC.  This is optional.
-	 */
-	ks_pcie->error_irq = irq_of_parse_and_map(ks_pcie->np, 0);
-	if (ks_pcie->error_irq <= 0)
-		dev_info(dev, "no error IRQ defined\n");
-	else {
-		ret = request_irq(ks_pcie->error_irq, pcie_err_irq_handler,
-				  IRQF_SHARED, "pcie-error-irq", ks_pcie);
-		if (ret < 0) {
-			dev_err(dev, "failed to request error IRQ %d\n",
-				ks_pcie->error_irq);
-			return ret;
-		}
-	}
 
 	pp->root_bus_nr = -1;
 	pp->ops = &keystone_pcie_host_ops;
@@ -346,19 +332,60 @@ static int __exit ks_pcie_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static void ks_pcie_disable_phy(struct keystone_pcie *ks_pcie)
+{
+	int num_lanes = ks_pcie->num_lanes;
+
+	while (num_lanes--) {
+		phy_power_off(ks_pcie->phy[num_lanes]);
+		phy_exit(ks_pcie->phy[num_lanes]);
+	}
+}
+
+static int ks_pcie_enable_phy(struct keystone_pcie *ks_pcie)
+{
+	int i;
+	int ret;
+	int num_lanes = ks_pcie->num_lanes;
+
+	for (i = 0; i < num_lanes; i++) {
+		ret = phy_init(ks_pcie->phy[i]);
+		if (ret < 0)
+			goto err_phy;
+
+		ret = phy_power_on(ks_pcie->phy[i]);
+		if (ret < 0) {
+			phy_exit(ks_pcie->phy[i]);
+			goto err_phy;
+		}
+	}
+
+	return 0;
+
+err_phy:
+	while (--i >= 0) {
+		phy_power_off(ks_pcie->phy[i]);
+		phy_exit(ks_pcie->phy[i]);
+	}
+
+	return ret;
+}
+
 static int __init ks_pcie_probe(struct platform_device *pdev)
 {
-	struct device *dev = &pdev->dev;
-	struct dw_pcie *pci;
-	struct keystone_pcie *ks_pcie;
-	struct resource *res;
-	void __iomem *reg_p;
-	struct phy *phy;
 	int ret;
-
-	ks_pcie = devm_kzalloc(dev, sizeof(*ks_pcie), GFP_KERNEL);
-	if (!ks_pcie)
-		return -ENOMEM;
+	int irq;
+	unsigned id;
+	char name[10];
+	u32 index;
+	u32 num_lanes;
+	struct phy **phy;
+	struct device_link **link;
+	struct device *dev = &pdev->dev;
+	struct device_node *np = dev->of_node;
+	struct dw_pcie *pci;
+	struct regmap *devctrl_regs;
+	struct keystone_pcie *ks_pcie;
 
 	pci = devm_kzalloc(dev, sizeof(*pci), GFP_KERNEL);
 	if (!pci)
@@ -367,48 +394,122 @@ static int __init ks_pcie_probe(struct platform_device *pdev)
 	pci->dev = dev;
 	pci->ops = &dw_pcie_ops;
 
-	ks_pcie->pci = pci;
+	ks_pcie = devm_kzalloc(dev, sizeof(*ks_pcie), GFP_KERNEL);
+	if (!ks_pcie)
+		return -ENOMEM;
 
-	/* initialize SerDes Phy if present */
-	phy = devm_phy_get(dev, "pcie-phy");
-	if (PTR_ERR_OR_ZERO(phy) == -EPROBE_DEFER)
-		return PTR_ERR(phy);
+        ret = of_property_read_u32(np, "num-lanes", &num_lanes);
+        if (ret)
+                num_lanes = 1;
 
-	if (!IS_ERR_OR_NULL(phy)) {
-		ret = phy_init(phy);
-		if (ret < 0)
-			return ret;
+        ret = of_property_read_u32(np, "num-lanes", &num_lanes);
+        if (ret)
+                num_lanes = 1;
+
+	phy = devm_kzalloc(dev, sizeof(*phy) * num_lanes, GFP_KERNEL);
+	if (!phy)
+		return -ENOMEM;
+
+	link = devm_kzalloc(dev, sizeof(*link) * num_lanes, GFP_KERNEL);
+	if (!link)
+		return -ENOMEM;
+
+	for (index = 0; index < num_lanes; index++) {
+		snprintf(name, sizeof(name), "pcie-phy%d", index);
+		phy[index] = devm_phy_optional_get(dev, name);
+		if (IS_ERR(phy[index]))
+			return PTR_ERR(phy[index]);
+
+		if (!phy[index])
+			continue;
+
+		link[index] = device_link_add(dev, &phy[index]->dev, DL_FLAG_STATELESS);
+		if (!link[index]) {
+			ret = -EINVAL;
+			goto err_link;
+		}
 	}
 
-	/* index 2 is to read PCI DEVICE_ID */
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 2);
-	reg_p = devm_ioremap_resource(dev, res);
-	if (IS_ERR(reg_p))
-		return PTR_ERR(reg_p);
-	ks_pcie->device_id = readl(reg_p) >> 16;
-	devm_iounmap(dev, reg_p);
-	devm_release_mem_region(dev, res->start, resource_size(res));
+	devctrl_regs = syscon_regmap_lookup_by_phandle(np, "ti,syscon-dev");
+	if (IS_ERR(devctrl_regs)) {
+		ret = PTR_ERR(devctrl_regs);
+		goto err_link;
+	}
 
-	ks_pcie->np = dev->of_node;
-	platform_set_drvdata(pdev, ks_pcie);
+	ret = of_property_read_u32_index(np, "ti,syscon-dev", 1, &index);
+	if (ret) {
+		dev_err(dev, "Failed to get pcie vendor/device id offset!\n");
+		goto err_link;
+	}
+
+	ret = regmap_read(devctrl_regs, index, &id);
+	if (ret) {
+		dev_err(dev, "Failed to read pcie vendor id and device id!\n");
+		goto err_link;
+	}
+
+	ks_pcie->np = np;
+	ks_pcie->pci = pci;
+	ks_pcie->phy = phy;
+	ks_pcie->link = link;
+	ks_pcie->id = id;
+	ks_pcie->num_lanes = num_lanes;
+
+	ret = ks_pcie_enable_phy(ks_pcie);
+	if (ret) {
+		dev_err(dev, "failed to enable phy\n");
+		goto err_link;
+	}
+
 	ks_pcie->clk = devm_clk_get(dev, "pcie");
 	if (IS_ERR(ks_pcie->clk)) {
 		dev_err(dev, "Failed to get pcie rc clock\n");
-		return PTR_ERR(ks_pcie->clk);
+		goto err_clk_get;
 	}
+
 	ret = clk_prepare_enable(ks_pcie->clk);
 	if (ret)
-		return ret;
+		goto err_clk_get;
+
+	pm_runtime_enable(dev);
+	ret = pm_runtime_get_sync(dev);
+	if (ret < 0) {
+		dev_err(dev, "pm_runtime_get_sync failed\n");
+		goto err_get_sync;
+	}
+
+	irq = platform_get_irq(pdev, 0);
+	if (irq < 0) {
+		dev_err(dev, "missing IRQ resource: %d\n", irq);
+		ret = -EINVAL;
+		goto err_get_sync;
+	}
+	
+	ret = devm_request_irq(dev, irq, pcie_err_irq_handler, IRQF_SHARED,
+			       "ks-pcie-error-irq", ks_pcie);
+	if (ret < 0) {
+		dev_err(dev, "failed to request error IRQ %d\n", irq);
+		goto err_get_sync;
+	}
 
 	platform_set_drvdata(pdev, ks_pcie);
-
 	ret = ks_add_pcie_port(ks_pcie, pdev);
 	if (ret < 0)
-		goto fail_clk;
+		goto err_get_sync;
 
 	return 0;
-fail_clk:
+
+err_get_sync:
+	pm_runtime_put(dev);
+	pm_runtime_disable(dev);
 	clk_disable_unprepare(ks_pcie->clk);
+
+err_clk_get:
+	ks_pcie_disable_phy(ks_pcie);
+
+err_link:
+	while (--index >= 0 && link[index])
+		device_link_del(link[index]);
 
 	return ret;
 }

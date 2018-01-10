@@ -2514,14 +2514,19 @@ int regmap_raw_read(struct regmap *map, unsigned int reg, void *val,
 	unsigned int v;
 	int ret, i;
 
+	printk("%s %d\n", __func__, __LINE__);
 	if (!map->bus)
 		return -EINVAL;
+	printk("%s %d\n", __func__, __LINE__);
 	if (val_len % map->format.val_bytes)
 		return -EINVAL;
+	printk("%s %d\n", __func__, __LINE__);
 	if (!IS_ALIGNED(reg, map->reg_stride))
 		return -EINVAL;
+	printk("%s %d\n", __func__, __LINE__);
 	if (val_count == 0)
 		return -EINVAL;
+	printk("%s %d\n", __func__, __LINE__);
 
 	map->lock(map->lock_arg);
 

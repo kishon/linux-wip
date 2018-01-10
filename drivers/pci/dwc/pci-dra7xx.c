@@ -692,6 +692,14 @@ static int __init dra7xx_pcie_probe(struct platform_device *pdev)
 	if (dra7xx->link_gen < 0 || dra7xx->link_gen > 2)
 		dra7xx->link_gen = 2;
 
+
+	ret = devm_request_irq(dev, irq, dra7xx_pcie_irq_handler,
+			       IRQF_SHARED, "dra7xx-pcie-main", dra7xx);
+	if (ret) {
+		dev_err(dev, "failed to request irq\n");
+		goto err_gpio;
+	}
+
 	switch (mode) {
 	case DW_PCIE_RC_TYPE:
 		if (!IS_ENABLED(CONFIG_PCI_DRA7XX_HOST)) {
@@ -726,13 +734,6 @@ static int __init dra7xx_pcie_probe(struct platform_device *pdev)
 		dev_err(dev, "INVALID device type %d\n", mode);
 	}
 	dra7xx->mode = mode;
-
-	ret = devm_request_irq(dev, irq, dra7xx_pcie_irq_handler,
-			       IRQF_SHARED, "dra7xx-pcie-main", dra7xx);
-	if (ret) {
-		dev_err(dev, "failed to request irq\n");
-		goto err_gpio;
-	}
 
 	return 0;
 
