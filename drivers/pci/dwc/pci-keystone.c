@@ -242,13 +242,34 @@ static irqreturn_t ks_pcie_err_handler(int irq, void *priv)
 	return ks_dw_pcie_handle_error_irq(ks_pcie);
 }
 
+static int ks_pcie_intx_map(struct irq_domain *domain, unsigned int irq,
+			    irq_hw_number_t hwirq)
+{
+	irq_set_chip_and_handler(irq, &dummy_irq_chip, handle_simple_irq);
+	irq_set_chip_data(irq, domain->host_data);
+
+	return 0;
+}
+
+static const struct irq_domain_ops ks_pcie_intx_domain_ops = {
+	.map = ks_pcie_intx_map,
+};
+
 static int __init ks_add_pcie_port(struct keystone_pcie *ks_pcie,
 			 struct platform_device *pdev)
 {
+	int ret;
 	struct dw_pcie *pci = ks_pcie->pci;
 	struct pcie_port *pp = &pci->pp;
 	struct device *dev = &pdev->dev;
-	int ret;
+	struct resource *res;
+
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "config");
+	pp->va_cfg0_base = devm_pci_remap_cfg_resource(dev, res);
+	if (IS_ERR(pp->va_cfg0_base))
+		return PTR_ERR(pp->va_cfg0_base);
+
+	pp->va_cfg1_base = pp->va_cfg0_base;
 
 	/* Get legacy interrupt controller info */
 	ret = ks_pcie_get_irq_controller_info(ks_pcie, true);
@@ -259,6 +280,16 @@ static int __init ks_add_pcie_port(struct keystone_pcie *ks_pcie,
 	ret = ks_pcie_get_irq_controller_info(ks_pcie, false);
 	if (ret)
 		return ret;
+
+	ks_pcie->legacy_irq_domain =
+			irq_domain_add_linear(ks_pcie->legacy_intc_np,
+					PCI_NUM_INTX,
+					&ks_pcie_intx_domain_ops,
+					NULL);
+	if (!ks_pcie->legacy_irq_domain) {
+		dev_err(dev, "Failed to add irq domain for legacy irqs\n");
+		return -EINVAL;
+	}
 
 	pp->root_bus_nr = -1;
 	pp->ops = &ks_pcie_host_ops;
@@ -324,6 +355,8 @@ static int __init ks_pcie_probe(struct platform_device *pdev)
 	char name[10];
 	u32 index;
 	u32 num_lanes;
+	void __iomem *base;
+	struct resource *res;
 	struct phy **phy;
 	struct device_link **link;
 	struct device *dev = &pdev->dev;
@@ -336,11 +369,22 @@ static int __init ks_pcie_probe(struct platform_device *pdev)
 	if (!pci)
 		return -ENOMEM;
 
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "dbics");
+	base = devm_pci_remap_cfg_resource(dev, res);
+	if (IS_ERR(base))
+		return PTR_ERR(base);
+
 	pci->dev = dev;
+	pci->dbi_base = base;
 	pci->ops = &ks_pcie_dw_pcie_ops;
 
 	ks_pcie = devm_kzalloc(dev, sizeof(*ks_pcie), GFP_KERNEL);
 	if (!ks_pcie)
+		return -ENOMEM;
+
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "app");
+	base = devm_ioremap_nocache(dev, res->start, resource_size(res));
+	if (!base)
 		return -ENOMEM;
 
         ret = of_property_read_u32(np, "num-lanes", &num_lanes);
@@ -395,6 +439,8 @@ static int __init ks_pcie_probe(struct platform_device *pdev)
 	ks_pcie->link = link;
 	ks_pcie->id = id;
 	ks_pcie->num_lanes = num_lanes;
+	ks_pcie->va_app_base = base;
+	ks_pcie->app = *res;
 
 	ret = ks_pcie_enable_phy(ks_pcie);
 	if (ret) {
@@ -432,13 +478,13 @@ static int __init ks_pcie_probe(struct platform_device *pdev)
 		dev_err(dev, "failed to request error IRQ %d\n", irq);
 		goto err_get_sync;
 	}
-	ks_dw_pcie_enable_error_irq(ks_pcie);
-
 	platform_set_drvdata(pdev, ks_pcie);
 
 	ret = ks_add_pcie_port(ks_pcie, pdev);
 	if (ret < 0)
 		goto err_get_sync;
+
+	ks_dw_pcie_enable_error_irq(ks_pcie);
 
 	return 0;
 
