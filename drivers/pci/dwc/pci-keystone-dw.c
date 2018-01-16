@@ -450,18 +450,3 @@ void ks_dw_pcie_stop_link(struct dw_pcie *pci)
 	val &= ~LTSSM_EN_VAL;
 	ks_dw_app_writel(ks_pcie, CMD_STATUS, LTSSM_EN_VAL | val);
 }
-
-/**
- * ks_dw_pcie_host_init() - initialize host for v3_65 dw hardware
- *
- * Ioremap the register resources, initialize legacy irq domain
- * and call dw_pcie_v3_65_host_init() API to initialize the Keystone
- * PCI host controller.
- */
-int __init ks_dw_pcie_host_init(struct keystone_pcie *ks_pcie)
-{
-	struct dw_pcie *pci = ks_pcie->pci;
-	struct pcie_port *pp = &pci->pp;
-
-	return dw_pcie_host_init(pp);
-}

@@ -26,7 +26,21 @@
 #define PCIE_VENDORID_MASK	0xffff
 #define PCIE_DEVICEID_SHIFT	16
 
+#define CMD_STATUS	0x004
+#define LTSSM_EN_VAL	1
+
 #define to_keystone_pcie(x)	dev_get_drvdata((x)->dev)
+
+static inline u32 ks_pcie_app_readl(struct keystone_pcie *ks_pcie, u32 offset)
+{
+	return readl(ks_pcie->va_app_base + offset);
+}
+
+static inline void ks_pcie_app_writel(struct keystone_pcie *ks_pcie, u32 offset,
+				      u32 value)
+{
+	writel(value, ks_pcie->va_app_base + offset);
+}
 
 /*
  * Keystone PCI controller has a h/w limitation of
@@ -325,10 +339,47 @@ static int __init ks_add_pcie_port(struct keystone_pcie *ks_pcie,
 	return 0;
 }
 
+static int ks_pcie_link_up(struct dw_pcie *pci)
+{
+	u32 val;
+
+	val = dw_pcie_readl_dbi(pci, PORT_LOGIC_LTSSM_STATE_MASK);
+	val &= PORT_LOGIC_LTSSM_STATE_MASK;
+	return (val == PORT_LOGIC_LTSSM_STATE_L0);
+}
+
+static int ks_pcie_start_link(struct dw_pcie *pci)
+{
+	u32 val;
+	struct device *dev = pci->dev;
+	struct keystone_pcie *ks_pcie = to_keystone_pcie(pci);
+
+        if (dw_pcie_link_up(pci)) {
+                dev_err(dev, "Link already up\n");
+                return 0;
+        }
+
+	val = ks_pcie_app_readl(ks_pcie, CMD_STATUS);
+	val |= LTSSM_EN_VAL;
+	ks_pcie_app_writel(ks_pcie, CMD_STATUS, val);
+
+	return 0;
+}
+
+static void ks_pcie_stop_link(struct dw_pcie *pci)
+{
+	u32 val;
+	struct keystone_pcie *ks_pcie = to_keystone_pcie(pci);
+
+	val = ks_pcie_app_readl(ks_pcie, CMD_STATUS);
+	val &= ~LTSSM_EN_VAL;
+	ks_pcie_app_writel(ks_pcie, CMD_STATUS, val);
+}
+
 static const struct dw_pcie_ops ks_pcie_dw_pcie_ops = {
-	.start_link = ks_dw_pcie_start_link,
-	.stop_link = ks_dw_pcie_stop_link,
-	.link_up = ks_dw_pcie_link_up,
+	.start_link = ks_pcie_start_link,
+	.stop_link = ks_pcie_stop_link,
+	.link_up = ks_pcie_link_up,
 };
 
 static void ks_pcie_disable_phy(struct keystone_pcie *ks_pcie)
