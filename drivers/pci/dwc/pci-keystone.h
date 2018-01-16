@@ -13,7 +13,6 @@
  */
 
 struct keystone_pcie {
-	u32			id;
 	struct device_node	*np;
 	struct dw_pcie		*pci;
 	struct clk		*clk;

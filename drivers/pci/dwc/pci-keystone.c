@@ -193,21 +193,78 @@ static int ks_pcie_fault(unsigned long addr, unsigned int fsr,
 	return 0;
 }
 
+static int ks_pcie_init_id(struct keystone_pcie *ks_pcie)
+{
+	int ret;
+	u32 index;
+	unsigned id;
+	struct regmap *devctrl_regs;
+	struct dw_pcie *pci = ks_pcie->pci;
+	struct device *dev = pci->dev;
+	struct device_node *np = dev->of_node;
+
+	devctrl_regs = syscon_regmap_lookup_by_phandle(np, "ti,syscon-dev");
+	if (IS_ERR(devctrl_regs))
+		return PTR_ERR(devctrl_regs);
+
+	ret = of_property_read_u32_index(np, "ti,syscon-dev", 1, &index);
+	if (ret)
+		return ret;
+
+	ret = regmap_read(devctrl_regs, index, &id);
+	if (ret)
+		return ret;
+
+        dw_pcie_writew_dbi(pci, PCI_VENDOR_ID, id & PCIE_VENDORID_MASK);
+        dw_pcie_writew_dbi(pci, PCI_DEVICE_ID, id >> PCIE_DEVICEID_SHIFT);
+
+	return 0;
+}
+
+static int ks_pcie_intx_map(struct irq_domain *domain, unsigned int irq,
+			    irq_hw_number_t hwirq)
+{
+	irq_set_chip_and_handler(irq, &dummy_irq_chip, handle_simple_irq);
+	irq_set_chip_data(irq, domain->host_data);
+
+	return 0;
+}
+
+static const struct irq_domain_ops ks_pcie_intx_domain_ops = {
+	.map = ks_pcie_intx_map,
+};
+
 static int __init ks_pcie_host_init(struct pcie_port *pp)
 {
+	int ret;
+	struct irq_domain *legacy_irq_domain;
 	struct dw_pcie *pci = to_dw_pcie_from_pp(pp);
+	struct device *dev = pci->dev;
 	struct keystone_pcie *ks_pcie = to_keystone_pcie(pci);
+
+	/* Get legacy interrupt controller info */
+	ret = ks_pcie_get_irq_controller_info(ks_pcie, true);
+	if (ret)
+		return ret;
+
+	/* Get MSI interrupt controller info */
+	ret = ks_pcie_get_irq_controller_info(ks_pcie, false);
+	if (ret)
+		return ret;
+
+	legacy_irq_domain = irq_domain_add_linear(ks_pcie->legacy_intc_np,
+						  PCI_NUM_INTX,
+						  &ks_pcie_intx_domain_ops,
+						  NULL);
+	if (!legacy_irq_domain) {
+		dev_err(dev, "Failed to add irq domain for legacy irqs\n");
+		return -EINVAL;
+	}
+	ks_pcie->legacy_irq_domain = legacy_irq_domain;
 
 	dw_pcie_setup_rc(pp);
 	ks_dw_pcie_setup_rc_app_regs(ks_pcie);
 	ks_pcie_setup_interrupts(ks_pcie);
-	writew(PCI_IO_RANGE_TYPE_32 | (PCI_IO_RANGE_TYPE_32 << 8),
-			pci->dbi_base + PCI_IO_BASE);
-
-        dw_pcie_writew_dbi(pci, PCI_VENDOR_ID,
-			   ks_pcie->id & PCIE_VENDORID_MASK);
-        dw_pcie_writew_dbi(pci, PCI_DEVICE_ID,
-			   ks_pcie->id >> PCIE_DEVICEID_SHIFT);
 
 	/*
 	 * PCIe access errors that result into OCP errors are caught by ARM as
@@ -217,8 +274,7 @@ static int __init ks_pcie_host_init(struct pcie_port *pp)
 			"Asynchronous external abort");
 
 	ks_dw_pcie_start_link(pci);
-	if (!dw_pcie_wait_for_link(pci))
-		return 0;
+	dw_pcie_wait_for_link(pci);
 
 	return 0;
 }
@@ -242,19 +298,6 @@ static irqreturn_t ks_pcie_err_handler(int irq, void *priv)
 	return ks_dw_pcie_handle_error_irq(ks_pcie);
 }
 
-static int ks_pcie_intx_map(struct irq_domain *domain, unsigned int irq,
-			    irq_hw_number_t hwirq)
-{
-	irq_set_chip_and_handler(irq, &dummy_irq_chip, handle_simple_irq);
-	irq_set_chip_data(irq, domain->host_data);
-
-	return 0;
-}
-
-static const struct irq_domain_ops ks_pcie_intx_domain_ops = {
-	.map = ks_pcie_intx_map,
-};
-
 static int __init ks_add_pcie_port(struct keystone_pcie *ks_pcie,
 			 struct platform_device *pdev)
 {
@@ -270,30 +313,10 @@ static int __init ks_add_pcie_port(struct keystone_pcie *ks_pcie,
 		return PTR_ERR(pp->va_cfg0_base);
 
 	pp->va_cfg1_base = pp->va_cfg0_base;
-
-	/* Get legacy interrupt controller info */
-	ret = ks_pcie_get_irq_controller_info(ks_pcie, true);
-	if (ret)
-		return ret;
-
-	/* Get MSI interrupt controller info */
-	ret = ks_pcie_get_irq_controller_info(ks_pcie, false);
-	if (ret)
-		return ret;
-
-	ks_pcie->legacy_irq_domain =
-			irq_domain_add_linear(ks_pcie->legacy_intc_np,
-					PCI_NUM_INTX,
-					&ks_pcie_intx_domain_ops,
-					NULL);
-	if (!ks_pcie->legacy_irq_domain) {
-		dev_err(dev, "Failed to add irq domain for legacy irqs\n");
-		return -EINVAL;
-	}
-
 	pp->root_bus_nr = -1;
 	pp->ops = &ks_pcie_host_ops;
-	ret = ks_dw_pcie_host_init(ks_pcie);
+
+	ret = dw_pcie_host_init(pp);
 	if (ret) {
 		dev_err(dev, "failed to initialize host\n");
 		return ret;
@@ -349,11 +372,10 @@ err_phy:
 
 static int __init ks_pcie_probe(struct platform_device *pdev)
 {
+	int i;
 	int ret;
 	int irq;
-	unsigned id;
 	char name[10];
-	u32 index;
 	u32 num_lanes;
 	void __iomem *base;
 	struct resource *res;
@@ -362,7 +384,6 @@ static int __init ks_pcie_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct device_node *np = dev->of_node;
 	struct dw_pcie *pci;
-	struct regmap *devctrl_regs;
 	struct keystone_pcie *ks_pcie;
 
 	pci = devm_kzalloc(dev, sizeof(*pci), GFP_KERNEL);
@@ -399,45 +420,26 @@ static int __init ks_pcie_probe(struct platform_device *pdev)
 	if (!link)
 		return -ENOMEM;
 
-	for (index = 0; index < num_lanes; index++) {
-		snprintf(name, sizeof(name), "pcie-phy%d", index);
-		phy[index] = devm_phy_optional_get(dev, name);
-		if (IS_ERR(phy[index]))
-			return PTR_ERR(phy[index]);
+	for (i = 0; i < num_lanes; i++) {
+		snprintf(name, sizeof(name), "pcie-phy%d", i);
+		phy[i] = devm_phy_optional_get(dev, name);
+		if (IS_ERR(phy[i]))
+			return PTR_ERR(phy[i]);
 
-		if (!phy[index])
+		if (!phy[i])
 			continue;
 
-		link[index] = device_link_add(dev, &phy[index]->dev, DL_FLAG_STATELESS);
-		if (!link[index]) {
+		link[i] = device_link_add(dev, &phy[i]->dev, DL_FLAG_STATELESS);
+		if (!link[i]) {
 			ret = -EINVAL;
 			goto err_link;
 		}
-	}
-
-	devctrl_regs = syscon_regmap_lookup_by_phandle(np, "ti,syscon-dev");
-	if (IS_ERR(devctrl_regs)) {
-		ret = PTR_ERR(devctrl_regs);
-		goto err_link;
-	}
-
-	ret = of_property_read_u32_index(np, "ti,syscon-dev", 1, &index);
-	if (ret) {
-		dev_err(dev, "Failed to get pcie vendor/device id offset!\n");
-		goto err_link;
-	}
-
-	ret = regmap_read(devctrl_regs, index, &id);
-	if (ret) {
-		dev_err(dev, "Failed to read pcie vendor id and device id!\n");
-		goto err_link;
 	}
 
 	ks_pcie->np = np;
 	ks_pcie->pci = pci;
 	ks_pcie->phy = phy;
 	ks_pcie->link = link;
-	ks_pcie->id = id;
 	ks_pcie->num_lanes = num_lanes;
 	ks_pcie->va_app_base = base;
 	ks_pcie->app = *res;
@@ -480,6 +482,10 @@ static int __init ks_pcie_probe(struct platform_device *pdev)
 	}
 	platform_set_drvdata(pdev, ks_pcie);
 
+	ret = ks_pcie_init_id(ks_pcie);
+	if (ret < 0)
+		goto err_get_sync;
+
 	ret = ks_add_pcie_port(ks_pcie, pdev);
 	if (ret < 0)
 		goto err_get_sync;
@@ -497,8 +503,8 @@ err_clk_get:
 	ks_pcie_disable_phy(ks_pcie);
 
 err_link:
-	while (--index >= 0 && link[index])
-		device_link_del(link[index]);
+	while (--i >= 0 && link[i])
+		device_link_del(link[i]);
 
 	return ret;
 }
