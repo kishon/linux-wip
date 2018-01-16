@@ -216,40 +216,6 @@ irqreturn_t ks_dw_pcie_handle_error_irq(struct keystone_pcie *ks_pcie)
 	return IRQ_HANDLED;
 }
 
-static void ks_dw_pcie_ack_legacy_irq(struct irq_data *d)
-{
-}
-
-static void ks_dw_pcie_mask_legacy_irq(struct irq_data *d)
-{
-}
-
-static void ks_dw_pcie_unmask_legacy_irq(struct irq_data *d)
-{
-}
-
-static struct irq_chip ks_dw_pcie_legacy_irq_chip = {
-	.name = "Keystone-PCI-Legacy-IRQ",
-	.irq_ack = ks_dw_pcie_ack_legacy_irq,
-	.irq_mask = ks_dw_pcie_mask_legacy_irq,
-	.irq_unmask = ks_dw_pcie_unmask_legacy_irq,
-};
-
-static int ks_dw_pcie_init_legacy_irq_map(struct irq_domain *d,
-				unsigned int irq, irq_hw_number_t hw_irq)
-{
-	irq_set_chip_and_handler(irq, &ks_dw_pcie_legacy_irq_chip,
-				 handle_level_irq);
-	irq_set_chip_data(irq, d->host_data);
-
-	return 0;
-}
-
-static const struct irq_domain_ops ks_dw_pcie_legacy_irq_domain_ops = {
-	.map = ks_dw_pcie_init_legacy_irq_map,
-	.xlate = irq_domain_xlate_onetwocell,
-};
-
 /**
  * ks_dw_pcie_set_dbi_mode() - Set DBI mode to access overlaid BAR mask
  * registers
@@ -410,43 +376,4 @@ void ks_dw_pcie_v3_65_scan_bus(struct pcie_port *pp)
 	  * be sufficient.  Use physical address to avoid any conflicts.
 	  */
 	dw_pcie_writel_dbi(pci, PCI_BASE_ADDRESS_0, ks_pcie->app.start);
-}
-
-/**
- * ks_dw_pcie_link_up() - Check if link up
- */
-int ks_dw_pcie_link_up(struct dw_pcie *pci)
-{
-	u32 val;
-
-	val = dw_pcie_readl_dbi(pci, DEBUG0);
-	return (val & LTSSM_STATE_MASK) == LTSSM_STATE_L0;
-}
-
-int ks_dw_pcie_start_link(struct dw_pcie *pci)
-{
-	u32 val;
-	struct device *dev = pci->dev;
-	struct keystone_pcie *ks_pcie = to_keystone_pcie(pci);
-
-        if (dw_pcie_link_up(pci)) {
-                dev_err(dev, "Link already up\n");
-                return 0;
-        }
-
-	val = ks_dw_app_readl(ks_pcie, CMD_STATUS);
-	val |= LTSSM_EN_VAL;
-	ks_dw_app_writel(ks_pcie, CMD_STATUS, val);
-
-	return 0;
-}
-
-void ks_dw_pcie_stop_link(struct dw_pcie *pci)
-{
-	u32 val;
-	struct keystone_pcie *ks_pcie = to_keystone_pcie(pci);
-
-	val = ks_dw_app_readl(ks_pcie, CMD_STATUS);
-	val &= ~LTSSM_EN_VAL;
-	ks_dw_app_writel(ks_pcie, CMD_STATUS, LTSSM_EN_VAL | val);
 }

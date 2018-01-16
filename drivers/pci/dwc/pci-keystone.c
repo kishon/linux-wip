@@ -31,6 +31,9 @@
 
 #define to_keystone_pcie(x)	dev_get_drvdata((x)->dev)
 
+static int ks_pcie_start_link(struct dw_pcie *pci);
+static void ks_pcie_stop_link(struct dw_pcie *pci);
+
 static inline u32 ks_pcie_app_readl(struct keystone_pcie *ks_pcie, u32 offset)
 {
 	return readl(ks_pcie->va_app_base + offset);
@@ -287,7 +290,7 @@ static int __init ks_pcie_host_init(struct pcie_port *pp)
 	hook_fault_code(17, ks_pcie_fault, SIGBUS, 0,
 			"Asynchronous external abort");
 
-	ks_dw_pcie_start_link(pci);
+	ks_pcie_start_link(pci);
 	dw_pcie_wait_for_link(pci);
 
 	return 0;
@@ -566,7 +569,7 @@ void ks_pcie_shutdown(struct platform_device *pdev)
 	struct keystone_pcie *ks_pcie = dev_get_drvdata(dev);
 	int ret;
 
-	ks_dw_pcie_stop_link(ks_pcie->pci);
+	ks_pcie_stop_link(ks_pcie->pci);
 
 	ret = pm_runtime_put_sync(dev);
 	if (ret < 0)
