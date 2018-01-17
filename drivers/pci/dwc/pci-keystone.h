@@ -38,7 +38,6 @@ struct keystone_pcie {
 };
 
 /* Keystone DW specific MSI controller APIs/definitions */
-void ks_dw_pcie_handle_msi_irq(struct keystone_pcie *ks_pcie, int offset);
 phys_addr_t ks_dw_pcie_get_msi_addr(struct pcie_port *pp);
 
 /* Keystone specific PCI controller APIs */

@@ -54,7 +54,7 @@ static void dw_pci_ack_irq(struct irq_data *d)
 	pp = (struct pcie_port *) msi_desc_to_pci_sysdata(msi);
 
 	if (pp->ops->msi_irq_ack)
-		pp->ops->msi_irq_ack(d->irq, pp);
+		pp->ops->msi_irq_ack(d->hwirq, pp);
 }
 
 static void dw_msi_mask_irq(struct irq_data *d)

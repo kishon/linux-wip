@@ -41,6 +41,12 @@
 #define OB_WIN_SIZE		8	/* 8MB */
 
 #define IRQ_EOI			0x050
+#define MSI_IRQ 		0x054
+
+#define MSI_IRQ_STATUS(n)	(0x104 + ((n) << 4))
+#define MSI_IRQ_ENABLE_SET(n)	(0x108 + ((n) << 4))
+#define MSI_IRQ_ENABLE_CLR(n)	(0x10c + ((n) << 4))
+#define MSI_IRQ_OFFSET		4
 
 #define IRQ_STATUS(n)		(0x184 + ((n) << 4))
 #define IRQ_ENABLE_SET(n)	(0x188 + ((n) << 4))
@@ -48,7 +54,6 @@
 
 #define ERR_IRQ_STATUS		0x1c4
 #define ERR_IRQ_ENABLE_SET	0x1c8
-#define ERR_IRQ_ENABLE_CLR	0x1cc
 #define ERR_AER			BIT(5)	/* ECRC error */
 #define ERR_AXI			BIT(4)	/* AXI tag lookup fatal error */
 #define ERR_CORR		BIT(3)	/* Correctable error */
@@ -57,7 +62,6 @@
 #define ERR_SYS			BIT(0)	/* System (fatal, non-fatal, or correctable) */
 #define ERR_IRQ_ALL		(ERR_AER | ERR_AXI | ERR_CORR | \
 				 ERR_NONFATAL | ERR_FATAL | ERR_SYS)
-#define ERR_FATAL_IRQ		(ERR_FATAL | ERR_AXI)
 
 #define OB_OFFSET_INDEX(n)	(0x200 + (8 * (n)))
 #define OB_ENABLEN		BIT(0)
@@ -185,17 +189,34 @@ static int ks_pcie_wr_other_conf(struct pcie_port *pp, struct pci_bus *bus,
 
 static void ks_pcie_msi_irq_handler(struct irq_desc *desc)
 {
+	u32 reg;
+	u32 vector;
+	int pos;
+	int virq;
 	unsigned int irq = irq_desc_get_irq(desc);
 	struct keystone_pcie *ks_pcie = irq_desc_get_handler_data(desc);
 	u32 offset = irq - ks_pcie->msi_host_irqs[0];
 	struct dw_pcie *pci = ks_pcie->pci;
+	struct pcie_port *pp = &pci->pp;
 	struct device *dev = pci->dev;
 	struct irq_chip *chip = irq_desc_get_chip(desc);
 
 	dev_dbg(dev, "%s, irq %d\n", __func__, irq);
 
 	chained_irq_enter(chip, desc);
-	ks_dw_pcie_handle_msi_irq(ks_pcie, offset);
+
+	reg = ks_pcie_app_readl(ks_pcie, MSI_IRQ_STATUS(offset));
+	for (pos = 0; pos < 4; pos++) {
+		if (!(reg & BIT(pos)))
+			continue;
+
+		vector = offset + (pos << 3);
+		virq = irq_linear_revmap(pp->irq_domain, vector);
+		dev_dbg(dev, "irq: bit %d, vector %d, virq %d\n", pos, vector,
+			virq);
+		generic_handle_irq(virq);
+	}
+
 	chained_irq_exit(chip, desc);
 }
 
@@ -226,6 +247,14 @@ static void ks_pcie_legacy_irq_handler(struct irq_desc *desc)
 
 ret:
 	chained_irq_exit(chip, desc);
+}
+
+static phys_addr_t ks_pcie_get_msi_addr(struct pcie_port *pp)
+{
+	struct dw_pcie *pci = to_dw_pcie_from_pp(pp);
+	struct keystone_pcie *ks_pcie = to_keystone_pcie(pci);
+
+	return ks_pcie->app.start + MSI_IRQ;
 }
 
 static void ks_dw_pcie_v3_65_scan_bus(struct pcie_port *pp)
@@ -293,6 +322,50 @@ static int ks_pcie_get_irq_controller_info(struct keystone_pcie *ks_pcie,
 	*num_irqs = irq_count;
 
 	return 0;
+}
+
+static void ks_pcie_msi_irq_ack(int irq, struct pcie_port *pp)
+{
+	u32 reg_offset, bit_pos;
+	struct keystone_pcie *ks_pcie;
+	struct dw_pcie *pci;
+
+	pci = to_dw_pcie_from_pp(pp);
+	ks_pcie = to_keystone_pcie(pci);
+
+	reg_offset = irq % 8;
+	bit_pos = irq >> 3;
+	ks_pcie_app_writel(ks_pcie, MSI_IRQ_STATUS(reg_offset), BIT(bit_pos));
+	ks_pcie_app_writel(ks_pcie, IRQ_EOI, MSI_IRQ_OFFSET + reg_offset);
+}
+
+static void ks_pcie_msi_set_irq(struct pcie_port *pp, int irq)
+{
+	u32 reg_offset, bit_pos;
+	struct dw_pcie *pci = to_dw_pcie_from_pp(pp);
+	struct keystone_pcie *ks_pcie = to_keystone_pcie(pci);
+
+	reg_offset = irq % 8;
+	bit_pos = irq >> 3;
+	ks_pcie_app_writel(ks_pcie, MSI_IRQ_ENABLE_SET(reg_offset),
+			   BIT(bit_pos));
+}
+
+static void ks_pcie_msi_clear_irq(struct pcie_port *pp, int irq)
+{
+	u32 reg_offset, bit_pos;
+	struct dw_pcie *pci = to_dw_pcie_from_pp(pp);
+	struct keystone_pcie *ks_pcie = to_keystone_pcie(pci);
+
+	reg_offset = irq % 8;
+	bit_pos = irq >> 3;
+	ks_pcie_app_writel(ks_pcie, MSI_IRQ_ENABLE_CLR(reg_offset),
+			   BIT(bit_pos));
+}
+
+static int ks_pcie_msi_host_init(struct pcie_port *pp)
+{
+	return dw_pcie_allocate_domains(pp);
 }
 
 static void ks_pcie_enable_legacy_irqs(struct keystone_pcie *ks_pcie)
@@ -438,11 +511,11 @@ static const struct dw_pcie_host_ops ks_pcie_host_ops = {
 	.rd_other_conf = ks_pcie_rd_other_conf,
 	.wr_other_conf = ks_pcie_wr_other_conf,
 	.host_init = ks_pcie_host_init,
-	.msi_set_irq = ks_dw_pcie_msi_set_irq,
-	.msi_clear_irq = ks_dw_pcie_msi_clear_irq,
-	.get_msi_addr = ks_dw_pcie_get_msi_addr,
-	.msi_host_init = ks_dw_pcie_msi_host_init,
-	.msi_irq_ack = ks_dw_pcie_msi_irq_ack,
+	.msi_set_irq = ks_pcie_msi_set_irq,
+	.msi_clear_irq = ks_pcie_msi_clear_irq,
+	.get_msi_addr = ks_pcie_get_msi_addr,
+	.msi_host_init = ks_pcie_msi_host_init,
+	.msi_irq_ack = ks_pcie_msi_irq_ack,
 	.scan_bus = ks_dw_pcie_v3_65_scan_bus,
 };
 
