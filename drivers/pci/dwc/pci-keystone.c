@@ -26,8 +26,6 @@
 #define PCIE_VENDORID_MASK	0xffff
 #define PCIE_DEVICEID_SHIFT	16
 
-#define OB_WIN_SIZE		8	/* 8MB */
-
 #define CMD_STATUS		0x004
 #define LTSSM_EN_VAL		BIT(0)
 #define OB_XLAT_EN_VAL		BIT(1)
@@ -40,6 +38,26 @@
 #define CFG_TYPE1		BIT(24)
 
 #define OB_SIZE			0x030
+#define OB_WIN_SIZE		8	/* 8MB */
+
+#define IRQ_EOI			0x050
+
+#define IRQ_STATUS(n)		(0x184 + ((n) << 4))
+#define IRQ_ENABLE_SET(n)	(0x188 + ((n) << 4))
+#define INTx_EN			BIT(0)
+
+#define ERR_IRQ_STATUS		0x1c4
+#define ERR_IRQ_ENABLE_SET	0x1c8
+#define ERR_IRQ_ENABLE_CLR	0x1cc
+#define ERR_AER			BIT(5)	/* ECRC error */
+#define ERR_AXI			BIT(4)	/* AXI tag lookup fatal error */
+#define ERR_CORR		BIT(3)	/* Correctable error */
+#define ERR_NONFATAL		BIT(2)	/* Non-fatal error */
+#define ERR_FATAL		BIT(1)	/* Fatal error */
+#define ERR_SYS			BIT(0)	/* System (fatal, non-fatal, or correctable) */
+#define ERR_IRQ_ALL		(ERR_AER | ERR_AXI | ERR_CORR | \
+				 ERR_NONFATAL | ERR_FATAL | ERR_SYS)
+#define ERR_FATAL_IRQ		(ERR_FATAL | ERR_AXI)
 
 #define OB_OFFSET_INDEX(n)	(0x200 + (8 * (n)))
 #define OB_ENABLEN		BIT(0)
@@ -183,6 +201,8 @@ static void ks_pcie_msi_irq_handler(struct irq_desc *desc)
 
 static void ks_pcie_legacy_irq_handler(struct irq_desc *desc)
 {
+	u32 reg;
+	int virq;
 	unsigned int irq = irq_desc_get_irq(desc);
 	struct keystone_pcie *ks_pcie = irq_desc_get_handler_data(desc);
 	struct dw_pcie *pci = ks_pcie->pci;
@@ -193,7 +213,18 @@ static void ks_pcie_legacy_irq_handler(struct irq_desc *desc)
 	dev_dbg(dev, ": Handling legacy irq %d\n", irq);
 
 	chained_irq_enter(chip, desc);
-	ks_dw_pcie_handle_legacy_irq(ks_pcie, offset);
+
+	reg = ks_pcie_app_readl(ks_pcie, IRQ_STATUS(offset));
+	if (!(reg & INTx_EN))
+		goto ret;
+
+	virq = irq_linear_revmap(ks_pcie->legacy_irq_domain, offset);
+	dev_dbg(dev, ": irq: irq_offset %d, virq %d\n", offset, virq);
+	generic_handle_irq(virq);
+
+	ks_pcie_app_writel(ks_pcie, IRQ_EOI, offset);
+
+ret:
 	chained_irq_exit(chip, desc);
 }
 
@@ -264,6 +295,14 @@ static int ks_pcie_get_irq_controller_info(struct keystone_pcie *ks_pcie,
 	return 0;
 }
 
+static void ks_pcie_enable_legacy_irqs(struct keystone_pcie *ks_pcie)
+{
+	int i;
+
+	for (i = 0; i < PCI_NUM_INTX; i++)
+		ks_pcie_app_writel(ks_pcie, IRQ_ENABLE_SET(i), INTx_EN);
+}
+
 static void ks_pcie_setup_interrupts(struct keystone_pcie *ks_pcie)
 {
 	int i;
@@ -274,7 +313,7 @@ static void ks_pcie_setup_interrupts(struct keystone_pcie *ks_pcie)
 						 ks_pcie_legacy_irq_handler,
 						 ks_pcie);
 	}
-	ks_dw_pcie_enable_legacy_irqs(ks_pcie);
+	ks_pcie_enable_legacy_irqs(ks_pcie);
 
 	/* MSI IRQ */
 	for (i = 0; i < ks_pcie->num_msi_host_irqs; i++) {
@@ -409,9 +448,38 @@ static const struct dw_pcie_host_ops ks_pcie_host_ops = {
 
 static irqreturn_t ks_pcie_err_handler(int irq, void *priv)
 {
+	u32 reg;
 	struct keystone_pcie *ks_pcie = priv;
+	struct device *dev = ks_pcie->pci->dev;
 
-	return ks_dw_pcie_handle_error_irq(ks_pcie);
+	reg = ks_pcie_app_readl(ks_pcie, ERR_IRQ_STATUS);
+
+	if (reg & ERR_SYS)
+		dev_err(dev, "System Error\n");
+
+	if (reg & ERR_FATAL)
+		dev_dbg(dev, "Fatal Error\n");
+
+	if (reg & ERR_NONFATAL)
+		dev_dbg(dev, "Non Fatal Error\n");
+
+	if (reg & ERR_CORR)
+		dev_dbg(dev, "Correctable Error\n");
+
+	if (reg & ERR_AXI)
+		dev_dbg(dev, "AXI tag lookup fatal Error\n");
+
+	if (reg & ERR_AER)
+		dev_dbg(dev, "ECRC Error\n");
+
+	ks_pcie_app_writel(ks_pcie, ERR_IRQ_STATUS, reg);
+
+	return IRQ_HANDLED;
+}
+
+static void ks_pcie_enable_error_irq(struct keystone_pcie *ks_pcie)
+{
+	ks_pcie_app_writel(ks_pcie, ERR_IRQ_ENABLE_SET, ERR_IRQ_ALL);
 }
 
 static int __init ks_add_pcie_port(struct keystone_pcie *ks_pcie,
@@ -679,7 +747,7 @@ static int __init ks_pcie_probe(struct platform_device *pdev)
 	if (ret < 0)
 		goto err_get_sync;
 
-	ks_dw_pcie_enable_error_irq(ks_pcie);
+	ks_pcie_enable_error_irq(ks_pcie);
 
 	return 0;
 
