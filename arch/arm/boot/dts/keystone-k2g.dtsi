@@ -582,6 +582,7 @@
 			status = "disabled";
 			device_type = "pci";
 			num-lanes = <1>;
+			num-ob-windows = <32>;
 			dma-coherent;
 
 			/* error interrupt */

@@ -17,6 +17,7 @@ struct keystone_pcie {
 	struct dw_pcie		*pci;
 	struct clk		*clk;
 	int			num_lanes;
+	u32			num_ob_windows;
 	struct phy		**phy;
 	struct device_link	**link;
 
@@ -56,6 +57,5 @@ void ks_dw_pcie_stop_link(struct dw_pcie *pci);
 void ks_dw_pcie_msi_irq_ack(int i, struct pcie_port *pp);
 void ks_dw_pcie_msi_set_irq(struct pcie_port *pp, int irq);
 void ks_dw_pcie_msi_clear_irq(struct pcie_port *pp, int irq);
-void ks_dw_pcie_v3_65_scan_bus(struct pcie_port *pp);
 int ks_dw_pcie_msi_host_init(struct pcie_port *pp);
 int ks_dw_pcie_link_up(struct dw_pcie *pci);

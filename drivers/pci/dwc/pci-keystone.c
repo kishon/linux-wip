@@ -26,8 +26,25 @@
 #define PCIE_VENDORID_MASK	0xffff
 #define PCIE_DEVICEID_SHIFT	16
 
-#define CMD_STATUS	0x004
-#define LTSSM_EN_VAL	1
+#define OB_WIN_SIZE		8	/* 8MB */
+
+#define CMD_STATUS		0x004
+#define LTSSM_EN_VAL		BIT(0)
+#define OB_XLAT_EN_VAL		BIT(1)
+#define DBI_CS2			BIT(5)
+
+#define CFG_SETUP		0x008
+#define CFG_BUS(x)		(((x) & 0xff) << 16)
+#define CFG_DEVICE(x)		(((x) & 0x1f) << 8)
+#define CFG_FUNC(x)		((x) & 0x7)
+#define CFG_TYPE1		BIT(24)
+
+#define OB_SIZE			0x030
+
+#define OB_OFFSET_INDEX(n)	(0x200 + (8 * (n)))
+#define OB_ENABLEN		BIT(0)
+
+#define OB_OFFSET_HI(n)		(0x204 + (8 * (n)))
 
 #define to_keystone_pcie(x)	dev_get_drvdata((x)->dev)
 
@@ -43,6 +60,32 @@ static inline void ks_pcie_app_writel(struct keystone_pcie *ks_pcie, u32 offset,
 				      u32 value)
 {
 	writel(value, ks_pcie->va_app_base + offset);
+}
+
+static void ks_pcie_set_dbi_mode(struct keystone_pcie *ks_pcie)
+{
+	u32 val;
+
+	val = ks_pcie_app_readl(ks_pcie, CMD_STATUS);
+	val |= DBI_CS2;
+	ks_pcie_app_writel(ks_pcie, CMD_STATUS, val);
+
+	do {
+		val = ks_pcie_app_readl(ks_pcie, CMD_STATUS);
+	} while (!(val & DBI_CS2));
+}
+
+static void ks_pcie_clear_dbi_mode(struct keystone_pcie *ks_pcie)
+{
+	u32 val;
+
+	val = ks_pcie_app_readl(ks_pcie, CMD_STATUS);
+	val &= ~DBI_CS2;
+	ks_pcie_app_writel(ks_pcie, CMD_STATUS, val);
+
+	do {
+		val = ks_pcie_app_readl(ks_pcie, CMD_STATUS);
+	} while (val & DBI_CS2);
 }
 
 /*
@@ -88,6 +131,40 @@ static void ks_pcie_quirk(struct pci_dev *dev)
 }
 DECLARE_PCI_FIXUP_ENABLE(PCI_ANY_ID, PCI_ANY_ID, ks_pcie_quirk);
 
+static int ks_pcie_rd_other_conf(struct pcie_port *pp, struct pci_bus *bus,
+				 unsigned int devfn, int where, int size,
+				 u32 *val)
+{
+	u32 reg;
+	struct dw_pcie *pci = to_dw_pcie_from_pp(pp);
+	struct keystone_pcie *ks_pcie = to_keystone_pcie(pci);
+
+	reg = CFG_BUS(bus->number) | CFG_DEVICE(PCI_SLOT(devfn)) |
+		CFG_FUNC(PCI_FUNC(devfn));
+	if (bus->parent->number != pp->root_bus_nr)
+		reg |= CFG_TYPE1;
+	ks_pcie_app_writel(ks_pcie, CFG_SETUP, reg);
+
+	return dw_pcie_read(pp->va_cfg0_base + where, size, val);
+}
+
+static int ks_pcie_wr_other_conf(struct pcie_port *pp, struct pci_bus *bus,
+				 unsigned int devfn, int where, int size,
+				 u32 val)
+{
+	u32 reg;
+	struct dw_pcie *pci = to_dw_pcie_from_pp(pp);
+	struct keystone_pcie *ks_pcie = to_keystone_pcie(pci);
+
+	reg = CFG_BUS(bus->number) | CFG_DEVICE(PCI_SLOT(devfn)) |
+		CFG_FUNC(PCI_FUNC(devfn));
+	if (bus->parent->number != pp->root_bus_nr)
+		reg |= CFG_TYPE1;
+	ks_pcie_app_writel(ks_pcie, CFG_SETUP, reg);
+
+	return dw_pcie_write(pp->va_cfg0_base + where, size, val);
+}
+
 static void ks_pcie_msi_irq_handler(struct irq_desc *desc)
 {
 	unsigned int irq = irq_desc_get_irq(desc);
@@ -118,6 +195,23 @@ static void ks_pcie_legacy_irq_handler(struct irq_desc *desc)
 	chained_irq_enter(chip, desc);
 	ks_dw_pcie_handle_legacy_irq(ks_pcie, offset);
 	chained_irq_exit(chip, desc);
+}
+
+static void ks_dw_pcie_v3_65_scan_bus(struct pcie_port *pp)
+{
+	struct dw_pcie *pci = to_dw_pcie_from_pp(pp);
+	struct keystone_pcie *ks_pcie = to_keystone_pcie(pci);
+
+	ks_pcie_set_dbi_mode(ks_pcie);
+	dw_pcie_writel_dbi(pci, PCI_BASE_ADDRESS_0, 1);
+	dw_pcie_writel_dbi(pci, PCI_BASE_ADDRESS_0, SZ_4K - 1);
+	ks_pcie_clear_dbi_mode(ks_pcie);
+
+	 /*
+	  * For BAR0, just setting bus address for inbound writes (MSI) should
+	  * be sufficient.  Use physical address to avoid any conflicts.
+	  */
+	dw_pcie_writel_dbi(pci, PCI_BASE_ADDRESS_0, ks_pcie->app.start);
 }
 
 static int ks_pcie_get_irq_controller_info(struct keystone_pcie *ks_pcie,
@@ -210,32 +304,31 @@ static int ks_pcie_fault(unsigned long addr, unsigned int fsr,
 	return 0;
 }
 
-static int ks_pcie_init_id(struct keystone_pcie *ks_pcie)
+static void ks_pcie_setup_mem_space(struct keystone_pcie *ks_pcie)
 {
-	int ret;
-	u32 index;
-	unsigned id;
-	struct regmap *devctrl_regs;
+	u32 val;
+	u32 num_ob_windows = ks_pcie->num_ob_windows;
 	struct dw_pcie *pci = ks_pcie->pci;
-	struct device *dev = pci->dev;
-	struct device_node *np = dev->of_node;
+	struct pcie_port *pp = &pci->pp;
+	u64 start = pp->mem->start;
+	u64 end = pp->mem->end;
+	int i;
 
-	devctrl_regs = syscon_regmap_lookup_by_phandle(np, "ti,syscon-dev");
-	if (IS_ERR(devctrl_regs))
-		return PTR_ERR(devctrl_regs);
+	val = ilog2(OB_WIN_SIZE);
+	ks_pcie_app_writel(ks_pcie, OB_SIZE, val);
 
-	ret = of_property_read_u32_index(np, "ti,syscon-dev", 1, &index);
-	if (ret)
-		return ret;
+	/* Using Direct 1:1 mapping of RC <-> PCI memory space */
+	for (i = 0; i < num_ob_windows && (start < end); i++) {
+		ks_pcie_app_writel(ks_pcie, OB_OFFSET_INDEX(i),
+				   lower_32_bits(start) | OB_ENABLEN);
+		ks_pcie_app_writel(ks_pcie, OB_OFFSET_HI(i),
+				   upper_32_bits(start));
+		start += OB_WIN_SIZE;
+	}
 
-	ret = regmap_read(devctrl_regs, index, &id);
-	if (ret)
-		return ret;
-
-        dw_pcie_writew_dbi(pci, PCI_VENDOR_ID, id & PCIE_VENDORID_MASK);
-        dw_pcie_writew_dbi(pci, PCI_DEVICE_ID, id >> PCIE_DEVICEID_SHIFT);
-
-	return 0;
+	val = ks_pcie_app_readl(ks_pcie, CMD_STATUS);
+	val |= OB_XLAT_EN_VAL;
+	ks_pcie_app_writel(ks_pcie, CMD_STATUS, val);
 }
 
 static int ks_pcie_intx_map(struct irq_domain *domain, unsigned int irq,
@@ -280,7 +373,13 @@ static int __init ks_pcie_host_init(struct pcie_port *pp)
 	ks_pcie->legacy_irq_domain = legacy_irq_domain;
 
 	dw_pcie_setup_rc(pp);
-	ks_dw_pcie_setup_rc_app_regs(ks_pcie);
+
+        ks_pcie_set_dbi_mode(ks_pcie);
+        dw_pcie_writel_dbi(pci, PCI_BASE_ADDRESS_0, 0);
+        dw_pcie_writel_dbi(pci, PCI_BASE_ADDRESS_1, 0);
+        ks_pcie_clear_dbi_mode(ks_pcie);
+
+	ks_pcie_setup_mem_space(ks_pcie);
 	ks_pcie_setup_interrupts(ks_pcie);
 
 	/*
@@ -297,8 +396,8 @@ static int __init ks_pcie_host_init(struct pcie_port *pp)
 }
 
 static const struct dw_pcie_host_ops ks_pcie_host_ops = {
-	.rd_other_conf = ks_dw_pcie_rd_other_conf,
-	.wr_other_conf = ks_dw_pcie_wr_other_conf,
+	.rd_other_conf = ks_pcie_rd_other_conf,
+	.wr_other_conf = ks_pcie_wr_other_conf,
 	.host_init = ks_pcie_host_init,
 	.msi_set_irq = ks_dw_pcie_msi_set_irq,
 	.msi_clear_irq = ks_dw_pcie_msi_clear_irq,
@@ -340,6 +439,73 @@ static int __init ks_add_pcie_port(struct keystone_pcie *ks_pcie,
 	}
 
 	return 0;
+}
+
+static int ks_pcie_init_id(struct keystone_pcie *ks_pcie)
+{
+	int ret;
+	u32 index;
+	unsigned id;
+	struct regmap *devctrl_regs;
+	struct dw_pcie *pci = ks_pcie->pci;
+	struct device *dev = pci->dev;
+	struct device_node *np = dev->of_node;
+
+	devctrl_regs = syscon_regmap_lookup_by_phandle(np, "ti,syscon-dev");
+	if (IS_ERR(devctrl_regs))
+		return PTR_ERR(devctrl_regs);
+
+	ret = of_property_read_u32_index(np, "ti,syscon-dev", 1, &index);
+	if (ret)
+		return ret;
+
+	ret = regmap_read(devctrl_regs, index, &id);
+	if (ret)
+		return ret;
+
+        dw_pcie_writew_dbi(pci, PCI_VENDOR_ID, id & PCIE_VENDORID_MASK);
+        dw_pcie_writew_dbi(pci, PCI_DEVICE_ID, id >> PCIE_DEVICEID_SHIFT);
+
+	return 0;
+}
+
+static void ks_pcie_disable_phy(struct keystone_pcie *ks_pcie)
+{
+	int num_lanes = ks_pcie->num_lanes;
+
+	while (num_lanes--) {
+		phy_power_off(ks_pcie->phy[num_lanes]);
+		phy_exit(ks_pcie->phy[num_lanes]);
+	}
+}
+
+static int ks_pcie_enable_phy(struct keystone_pcie *ks_pcie)
+{
+	int i;
+	int ret;
+	int num_lanes = ks_pcie->num_lanes;
+
+	for (i = 0; i < num_lanes; i++) {
+		ret = phy_init(ks_pcie->phy[i]);
+		if (ret < 0)
+			goto err_phy;
+
+		ret = phy_power_on(ks_pcie->phy[i]);
+		if (ret < 0) {
+			phy_exit(ks_pcie->phy[i]);
+			goto err_phy;
+		}
+	}
+
+	return 0;
+
+err_phy:
+	while (--i >= 0) {
+		phy_power_off(ks_pcie->phy[i]);
+		phy_exit(ks_pcie->phy[i]);
+	}
+
+	return ret;
 }
 
 static int ks_pcie_link_up(struct dw_pcie *pci)
@@ -385,45 +551,6 @@ static const struct dw_pcie_ops ks_pcie_dw_pcie_ops = {
 	.link_up = ks_pcie_link_up,
 };
 
-static void ks_pcie_disable_phy(struct keystone_pcie *ks_pcie)
-{
-	int num_lanes = ks_pcie->num_lanes;
-
-	while (num_lanes--) {
-		phy_power_off(ks_pcie->phy[num_lanes]);
-		phy_exit(ks_pcie->phy[num_lanes]);
-	}
-}
-
-static int ks_pcie_enable_phy(struct keystone_pcie *ks_pcie)
-{
-	int i;
-	int ret;
-	int num_lanes = ks_pcie->num_lanes;
-
-	for (i = 0; i < num_lanes; i++) {
-		ret = phy_init(ks_pcie->phy[i]);
-		if (ret < 0)
-			goto err_phy;
-
-		ret = phy_power_on(ks_pcie->phy[i]);
-		if (ret < 0) {
-			phy_exit(ks_pcie->phy[i]);
-			goto err_phy;
-		}
-	}
-
-	return 0;
-
-err_phy:
-	while (--i >= 0) {
-		phy_power_off(ks_pcie->phy[i]);
-		phy_exit(ks_pcie->phy[i]);
-	}
-
-	return ret;
-}
-
 static int __init ks_pcie_probe(struct platform_device *pdev)
 {
 	int i;
@@ -431,6 +558,7 @@ static int __init ks_pcie_probe(struct platform_device *pdev)
 	int irq;
 	char name[10];
 	u32 num_lanes;
+	u32 num_ob_windows;
 	void __iomem *base;
 	struct resource *res;
 	struct phy **phy;
@@ -466,6 +594,12 @@ static int __init ks_pcie_probe(struct platform_device *pdev)
         if (ret)
                 num_lanes = 1;
 
+	ret = of_property_read_u32(np, "num-ob-windows", &num_ob_windows);
+	if (ret < 0) {
+		dev_err(dev, "unable to read *num-ob-windows* property\n");
+		return ret;
+	}
+
 	phy = devm_kzalloc(dev, sizeof(*phy) * num_lanes, GFP_KERNEL);
 	if (!phy)
 		return -ENOMEM;
@@ -495,6 +629,7 @@ static int __init ks_pcie_probe(struct platform_device *pdev)
 	ks_pcie->phy = phy;
 	ks_pcie->link = link;
 	ks_pcie->num_lanes = num_lanes;
+	ks_pcie->num_ob_windows = num_ob_windows;
 	ks_pcie->va_app_base = base;
 	ks_pcie->app = *res;
 
