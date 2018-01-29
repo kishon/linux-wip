@@ -767,12 +767,6 @@ static u8 sdhci_calc_timeout(struct sdhci_host *host, struct mmc_command *cmd)
 			break;
 	}
 
-	if (count >= 0xF) {
-		DBG("Too large timeout 0x%x requested for CMD%d!\n",
-		    count, cmd->opcode);
-		count = 0xE;
-	}
-
 	return count;
 }
 
@@ -790,6 +784,16 @@ static void sdhci_set_transfer_irqs(struct sdhci_host *host)
 	sdhci_writel(host, host->ier, SDHCI_SIGNAL_ENABLE);
 }
 
+static void sdhci_set_data_timeout_irq(struct sdhci_host *host, bool enable)
+{
+	if (enable)
+		host->ier |= SDHCI_INT_DATA_TIMEOUT;
+	else
+		host->ier &= ~SDHCI_INT_DATA_TIMEOUT;
+	sdhci_writel(host, host->ier, SDHCI_INT_ENABLE);
+	sdhci_writel(host, host->ier, SDHCI_SIGNAL_ENABLE);
+}
+
 static void sdhci_set_timeout(struct sdhci_host *host, struct mmc_command *cmd)
 {
 	u8 count;
@@ -798,6 +802,17 @@ static void sdhci_set_timeout(struct sdhci_host *host, struct mmc_command *cmd)
 		host->ops->set_timeout(host, cmd);
 	} else {
 		count = sdhci_calc_timeout(host, cmd);
+		if (count >= 0xF &&
+		    host->quirks2 & SDHCI_QUIRK2_DISABLE_HW_TIMEOUT)
+			sdhci_set_data_timeout_irq(host, false);
+		else if (!(host->ier & SDHCI_INT_DATA_TIMEOUT))
+			sdhci_set_data_timeout_irq(host, true);
+
+		if (count >= 0xF) {
+			DBG("Too large timeout 0x%x requested for CMD%d!\n",
+			    count, cmd->opcode);
+			count = 0xE;
+		}
 		sdhci_writeb(host, count, SDHCI_TIMEOUT_CONTROL);
 	}
 }
