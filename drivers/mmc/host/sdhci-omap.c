@@ -977,10 +977,6 @@ static int sdhci_omap_probe(struct platform_device *pdev)
 	if (host->quirks2 & SDHCI_QUIRK2_NO_1_8_V)
 		mmc->caps2 &= ~MMC_CAP2_HS200;
 
-	ret = sdhci_omap_config_iodelay_pinctrl_state(omap_host);
-	if (ret)
-		goto err_put_sync;
-
 	host->mmc_host_ops.get_ro = mmc_gpio_get_ro;
 	host->mmc_host_ops.start_signal_voltage_switch =
 					sdhci_omap_start_signal_voltage_switch;
@@ -989,7 +985,15 @@ static int sdhci_omap_probe(struct platform_device *pdev)
 	host->mmc_host_ops.execute_tuning = sdhci_omap_execute_tuning;
 	host->mmc_host_ops.enable_sdio_irq = sdhci_omap_enable_sdio_irq;
 
-	ret = sdhci_add_host(host);
+	ret = sdhci_setup_host(host);
+	if (ret)
+		goto err_put_sync;
+
+	ret = sdhci_omap_config_iodelay_pinctrl_state(omap_host);
+	if (ret)
+		goto err_put_sync;
+
+	ret = __sdhci_add_host(host);
 	if (ret)
 		goto err_put_sync;
 
