@@ -738,6 +738,39 @@ static unsigned int sdhci_target_timeout(struct sdhci_host *host,
 	return target_timeout;
 }
 
+static void sdhci_calc_sw_timeout(struct sdhci_host *host,
+				  struct mmc_command *cmd)
+{
+	struct mmc_data *data = cmd->data;
+	struct mmc_host *mmc = host->mmc;
+	struct mmc_ios *ios = &mmc->ios;
+	unsigned char bus_width = 1 << ios->bus_width;
+	unsigned int blksz;
+	unsigned int freq;
+	u64 target_timeout;
+	u64 transfer_time;
+
+	target_timeout = sdhci_target_timeout(host, cmd, data);
+	target_timeout *= NSEC_PER_USEC;
+
+	if (data) {
+		blksz = data->blksz;
+		freq = host->mmc->actual_clock ? : host->clock;
+		transfer_time = (u64)blksz * NSEC_PER_SEC * (8 / bus_width);
+		do_div(transfer_time, freq);
+		/* multiply by '2' to account for any unknowns */
+		transfer_time = transfer_time * 2;
+		/* calculate timeout for the entire data */
+		host->data_timeout = data->blocks * target_timeout +
+				     transfer_time;
+	} else {
+		host->data_timeout = target_timeout;
+	}
+
+	if (host->data_timeout)
+		host->data_timeout += MMC_CMD_TRANSFER_TIME;
+}
+
 static u8 sdhci_calc_timeout(struct sdhci_host *host, struct mmc_command *cmd,
 			     bool *too_big)
 {
@@ -831,6 +864,7 @@ static void sdhci_set_timeout(struct sdhci_host *host, struct mmc_command *cmd)
 
 		if (too_big &&
 		    host->quirks2 & SDHCI_QUIRK2_DISABLE_HW_TIMEOUT) {
+			sdhci_calc_sw_timeout(host, cmd);
 			sdhci_set_data_timeout_irq(host, false);
 		} else if (!(host->ier & SDHCI_INT_DATA_TIMEOUT)) {
 			sdhci_set_data_timeout_irq(host, true);
@@ -844,6 +878,8 @@ static void sdhci_prepare_data(struct sdhci_host *host, struct mmc_command *cmd)
 {
 	u8 ctrl;
 	struct mmc_data *data = cmd->data;
+
+	host->data_timeout = 0;
 
 	if (sdhci_data_line_cmd(cmd))
 		sdhci_set_timeout(host, cmd);
