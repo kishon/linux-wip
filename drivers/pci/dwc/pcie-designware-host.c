@@ -427,38 +427,49 @@ int dw_pcie_host_init(struct pcie_port *pp)
 	if (ret)
 		pci->num_viewport = 2;
 
+	printk("%s %d\n", __func__, __LINE__);
 	if (IS_ENABLED(CONFIG_PCI_MSI)) {
+	printk("%s %d\n", __func__, __LINE__);
 		/*
 		 * If a specific SoC driver needs to change the
 		 * default number of vectors, it needs to implement
 		 * the set_num_vectors callback.
 		 */
 		if (!pp->ops->set_num_vectors) {
+	printk("%s %d\n", __func__, __LINE__);
 			pp->num_vectors = MSI_DEF_NUM_VECTORS;
 		} else {
+	printk("%s %d\n", __func__, __LINE__);
 			pp->ops->set_num_vectors(pp);
 
 			if (pp->num_vectors > MAX_MSI_IRQS ||
 			    pp->num_vectors == 0) {
+	printk("%s %d\n", __func__, __LINE__);
 				dev_err(dev,
 					"Invalid number of vectors\n");
 				goto error;
 			}
+	printk("%s %d\n", __func__, __LINE__);
 		}
+	printk("%s %d\n", __func__, __LINE__);
 
 		if (!pp->ops->msi_host_init) {
+	printk("%s %d\n", __func__, __LINE__);
 			ret = dw_pcie_allocate_domains(pp);
 			if (ret)
 				goto error;
+	printk("%s %d\n", __func__, __LINE__);
 
 			if (pp->msi_irq)
 				irq_set_chained_handler_and_data(pp->msi_irq,
 							    dw_chained_msi_isr,
 							    pp);
 		} else {
+	printk("%s %d\n", __func__, __LINE__);
 			ret = pp->ops->msi_host_init(pp);
 			if (ret < 0)
 				goto error;
+	printk("%s %d\n", __func__, __LINE__);
 		}
 	}
 
@@ -514,6 +525,9 @@ static int dw_pcie_rd_other_conf(struct pcie_port *pp, struct pci_bus *bus,
 
 	busdev = PCIE_ATU_BUS(bus->number) | PCIE_ATU_DEV(PCI_SLOT(devfn)) |
 		 PCIE_ATU_FUNC(PCI_FUNC(devfn));
+/*	busdev = PCIE_ATU_DEV(PCI_SLOT(devfn)) |
+		 PCIE_ATU_FUNC(PCI_FUNC(devfn));
+*/
 
 	if (bus->parent->number == pp->root_bus_nr) {
 		type = PCIE_ATU_TYPE_CFG0;
@@ -631,17 +645,6 @@ static struct pci_ops dw_pcie_ops = {
 	.write = dw_pcie_wr_conf,
 };
 
-static u8 dw_pcie_iatu_unroll_enabled(struct dw_pcie *pci)
-{
-	u32 val;
-
-	val = dw_pcie_readl_dbi(pci, PCIE_ATU_VIEWPORT);
-	if (val == 0xffffffff)
-		return 1;
-
-	return 0;
-}
-
 void dw_pcie_setup_rc(struct pcie_port *pp)
 {
 	u32 val, ctrl, num_ctrls;
@@ -651,6 +654,7 @@ void dw_pcie_setup_rc(struct pcie_port *pp)
 
 	num_ctrls = pp->num_vectors / MAX_MSI_IRQS_PER_CTRL;
 
+	dw_pcie_dbi_ro_wr_en(pci);
 	/* Initialize IRQ Status array */
 	for (ctrl = 0; ctrl < num_ctrls; ctrl++)
 		dw_pcie_rd_own_conf(pp, PCIE_MSI_INTR0_ENABLE + (ctrl * 12), 4,
@@ -665,7 +669,6 @@ void dw_pcie_setup_rc(struct pcie_port *pp)
 	val &= 0xffff00ff;
 	val |= 0x00000100;
 	dw_pcie_writel_dbi(pci, PCI_INTERRUPT_LINE, val);
-	dw_pcie_dbi_ro_wr_dis(pci);
 
 	/* setup bus numbers */
 	val = dw_pcie_readl_dbi(pci, PCI_PRIMARY_BUS);
@@ -679,18 +682,14 @@ void dw_pcie_setup_rc(struct pcie_port *pp)
 	val |= PCI_COMMAND_IO | PCI_COMMAND_MEMORY |
 		PCI_COMMAND_MASTER | PCI_COMMAND_SERR;
 	dw_pcie_writel_dbi(pci, PCI_COMMAND, val);
+	dw_pcie_dbi_ro_wr_dis(pci);
 
 	/*
 	 * If the platform provides ->rd_other_conf, it means the platform
 	 * uses its own address translation component rather than ATU, so
 	 * we should not program the ATU here.
 	 */
-	if (!pp->ops->rd_other_conf) {
-		/* get iATU unroll support */
-		pci->iatu_unroll_enabled = dw_pcie_iatu_unroll_enabled(pci);
-		dev_dbg(pci->dev, "iATU unroll: %s\n",
-			pci->iatu_unroll_enabled ? "enabled" : "disabled");
-
+	 if (!pp->ops->rd_other_conf) {
 		dw_pcie_prog_outbound_atu(pci, PCIE_ATU_REGION_INDEX0,
 					  PCIE_ATU_TYPE_MEM, pp->mem_base,
 					  pp->mem_bus_addr, pp->mem_size);
@@ -700,16 +699,16 @@ void dw_pcie_setup_rc(struct pcie_port *pp)
 						  pp->io_bus_addr, pp->io_size);
 	}
 
+	dw_pcie_dbi_ro_wr_en(pci);
 	dw_pcie_wr_own_conf(pp, PCI_BASE_ADDRESS_0, 4, 0);
 
 	/* Enable write permission for the DBI read-only register */
-	dw_pcie_dbi_ro_wr_en(pci);
 	/* program correct class for RC */
 	dw_pcie_wr_own_conf(pp, PCI_CLASS_DEVICE, 2, PCI_CLASS_BRIDGE_PCI);
 	/* Better disable write permission right after the update */
-	dw_pcie_dbi_ro_wr_dis(pci);
 
 	dw_pcie_rd_own_conf(pp, PCIE_LINK_WIDTH_SPEED_CONTROL, 4, &val);
 	val |= PORT_LOGIC_SPEED_CHANGE;
 	dw_pcie_wr_own_conf(pp, PCIE_LINK_WIDTH_SPEED_CONTROL, 4, val);
+	dw_pcie_dbi_ro_wr_dis(pci);
 }

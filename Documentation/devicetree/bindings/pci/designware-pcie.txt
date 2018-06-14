@@ -1,7 +1,9 @@
 * Synopsys DesignWare PCIe interface
 
 Required properties:
-- compatible: should contain "snps,dw-pcie" to identify the core.
+- compatible: should contain "snps,dw-pcie" to identify the core,
+	      should contain "snps,dw-pcie-4.80" to identify the designware core
+	      version 4.80.
 - reg: Should contain the configuration address space.
 - reg-names: Must be "config" for the PCIe configuration space.
     (The old way of getting the configuration address space from "ranges"

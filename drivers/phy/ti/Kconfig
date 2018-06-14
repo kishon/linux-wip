@@ -20,6 +20,15 @@ config PHY_DM816X_USB
 	help
 	  Enable this for dm816x USB to work.
 
+config PHY_K3
+	tristate "TI K3 SERDES support"
+	depends on OF && ARCH_K3 || COMPILE_TEST
+	select GENERIC_PHY
+	select MULTIPLEXER
+	help
+	  This option enables support for TI K3 SerDes PHY used for
+	  USB 3.0, PCIe and SGMII Peripherals.
+
 config OMAP_CONTROL_PHY
 	tristate "OMAP CONTROL PHY Driver"
 	depends on ARCH_OMAP2PLUS || COMPILE_TEST

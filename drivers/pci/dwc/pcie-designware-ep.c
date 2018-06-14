@@ -171,6 +171,7 @@ static int dw_pcie_ep_set_bar(struct pci_epc *epc, u8 func_no,
 	else
 		as_type = DW_PCIE_AS_IO;
 
+	printk("%s %d %d addr=%x size=%d\n", __func__, __LINE__, bar, epf_bar->phys_addr, size);
 	ret = dw_pcie_ep_inbound_atu(ep, bar, epf_bar->phys_addr, as_type);
 	if (ret)
 		return ret;
@@ -306,6 +307,16 @@ static int dw_pcie_ep_start(struct pci_epc *epc)
 	return pci->ops->start_link(pci);
 }
 
+static void dw_pcie_ep_eoi(struct pci_epc *epc)
+{
+	struct dw_pcie_ep *ep = epc_get_drvdata(epc);
+
+	if (!ep->ops->eoi)
+		return;
+
+	return ep->ops->eoi(ep);
+}
+
 static const struct pci_epc_ops epc_ops = {
 	.write_header		= dw_pcie_ep_write_header,
 	.set_bar		= dw_pcie_ep_set_bar,
@@ -335,6 +346,7 @@ int dw_pcie_ep_raise_msi_irq(struct dw_pcie_ep *ep, u8 func_no,
 	msg_ctrl = dw_pcie_readw_dbi(pci, MSI_MESSAGE_CONTROL);
 	has_upper = !!(msg_ctrl & PCI_MSI_FLAGS_64BIT);
 	msg_addr_lower = dw_pcie_readl_dbi(pci, MSI_MESSAGE_ADDR_L32);
+
 	if (has_upper) {
 		msg_addr_upper = dw_pcie_readl_dbi(pci, MSI_MESSAGE_ADDR_U32);
 		msg_data = dw_pcie_readw_dbi(pci, MSI_MESSAGE_DATA_64);
@@ -450,5 +462,8 @@ int dw_pcie_ep_init(struct dw_pcie_ep *ep)
 	epc_set_drvdata(epc, ep);
 	dw_pcie_setup(pci);
 
+	dw_pcie_dbi_ro_wr_en(pci);
+	dw_pcie_writel_dbi(pci, 0x224, 0x0);
+	dw_pcie_dbi_ro_wr_dis(pci);
 	return 0;
 }

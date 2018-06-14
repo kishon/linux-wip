@@ -9,6 +9,7 @@
 #include <dt-bindings/interrupt-controller/irq.h>
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/pinctrl/k3-am6.h>
+#include <dt-bindings/phy/phy.h>
 
 / {
 	model = "Texas Instruments K3 AM654 SoC";
@@ -82,6 +83,7 @@
 			gic_its: gic-its@1000000 {
 				compatible = "arm,gic-v3-its";
 				reg = <0x0 0x1820000 0x0 0x10000>;
+				socionext,synquacer-pre-its = <0x1000000 0x400000>;
 				msi-controller;
 				#msi-cells = <1>;
 			};
@@ -127,6 +129,23 @@
 			k3_reset: reset-controller {
 				compatible = "ti,sci-reset";
 				#reset-cells = <2>;
+			};
+		};
+
+		ctrl_mmr0_p0: scm@100000 {
+			compatible = "syscon";
+			reg = <0x0 0x100000 0x0 0x2000>;
+			#syscon-cells = <1>;
+		};
+
+		ctrl_mmr0_p1: scm@104000 {
+			compatible = "syscon", "simple-mfd";
+			reg = <0x0 0x104000 0x0 0x2000>;
+			#syscon-cells = <1>;
+			mux: mux-controller {
+				compatible = "mmio-mux";
+				#mux-control-cells = <0>;
+				mux-reg-masks = <0x80 0x3>;
 			};
 		};
 
@@ -207,6 +226,103 @@
 			clock-frequency = <48000000>;
 			current-speed = <115200>;
 			status = "disabled";
+		};
+
+                pcie0_rc: pcie-rc@5500000 {
+                        compatible = "ti,k3-pcie-rc", "snps,dw-pcie-4.80";
+                        reg =  <0x0 0x5500000 0x0 0x1000>, <0x0 0x5501000 0x0 0x1000>, <0x0 0x10000000 0x0 0x2000>, <0x0 0x5506000 0x0 0x1000>;
+                        reg-names = "app", "dbics", "config", "atu";
+			power-domains = <&k3_pds 120>;
+                        #address-cells = <3>;
+                        #size-cells = <2>;
+                        ranges = <0x81000000 0 0          0x0   0x10002000 0 0x00010000
+                                  0x82000000 0 0x10012000 0x0   0x10012000 0 0x3FEE000>;
+                        ti,syscon-devid = <&ctrl_mmr0_p0 0x210>;
+                        ti,syscon-mode = <&ctrl_mmr0_p1 0x210>;
+                        status = "disabled";
+                        device_type = "pci";
+                        num-lanes = <1>;
+                        num-ob-windows = <16>;
+                        num-viewport = <16>;
+			phys = <&serdes0 PHY_TYPE_PCIE 0>;
+			phy-names = "pcie-phy0";
+                        /* error interrupt */
+                        interrupts = <GIC_SPI 340 IRQ_TYPE_EDGE_RISING>;
+                        #interrupt-cells = <1>;
+                        interrupt-map-mask = <0 0 0 7>;
+                        interrupt-map = <0 0 0 1 &pcie0_intc 0>, /* INT A */
+                                        <0 0 0 2 &pcie0_intc 0>, /* INT B */
+                                        <0 0 0 3 &pcie0_intc 0>, /* INT C */
+                                        <0 0 0 4 &pcie0_intc 0>; /* INT D */
+                        msi-map = <0x0 &gic_its 0x0 0x1000>;
+
+                        pcie0_intc: legacy-interrupt-controller@1 {
+                                interrupt-controller;
+                                #interrupt-cells = <1>;
+                                interrupt-parent = <&gic>;
+                                interrupts = <GIC_SPI 328 IRQ_TYPE_EDGE_RISING>;
+                        };
+                };
+
+		pcie0_ep: pcie-ep@5500000 {
+			compatible = "ti,k3-pcie-ep", "snps,dw-pcie-4.80";
+			reg =  <0x0 0x5500000 0x0 0x1000>, <0x0 0x5501000 0x0 0x1000>, <0x0 0x10000000 0x0 0x4000000>, <0x0 0x5506000 0x0 0x1000>;
+			reg-names = "app", "dbics", "addr_space", "atu";
+			power-domains = <&k3_pds 120>;
+                        ti,syscon-mode = <&ctrl_mmr0_p1 0x210>;
+			status = "disabled";
+			num-lanes = <1>;
+			num-ib-windows = <16>;
+			num-ob-windows = <16>;
+			/* error interrupt */
+			interrupts = <GIC_SPI 340 IRQ_TYPE_EDGE_RISING>;
+			phys = <&serdes0 PHY_TYPE_PCIE 0>;
+			phy-names = "pcie-phy0";
+		};
+
+                pcie1_rc: pcie-rc@5600000 {
+                        compatible = "ti,k3-pcie-rc", "snps,dw-pcie-4.80";
+                        reg =  <0x0 0x5600000 0x0 0x1000>, <0x0 0x5601000 0x0 0x1000>, <0x0 0x18000000 0x0 0x2000>, <0x0 0x5606000 0x0 0x1000>;
+                        reg-names = "app", "dbics", "config", "atu";
+                        #address-cells = <3>;
+                        #size-cells = <2>;
+                        ranges = <0x81000000 0 0          0x0   0x18002000 0 0x00010000
+                                  0x82000000 0 0x18012000 0x0   0x18012000 0 0x3FEE000>;
+                        //ti,syscon-dev = <&devctrl>;
+                        status = "disabled";
+                        device_type = "pci";
+                        num-lanes = <1>;
+                        num-ob-windows = <16>;
+                        num-viewport = <16>;
+                        /* error interrupt */
+                        interrupts = <GIC_SPI 355 IRQ_TYPE_EDGE_RISING>;
+                        #interrupt-cells = <1>;
+                        interrupt-map-mask = <0 0 0 7>;
+                        interrupt-map = <0 0 0 1 &pcie1_intc 0>, /* INT A */
+                                        <0 0 0 2 &pcie1_intc 0>, /* INT B */
+                                        <0 0 0 3 &pcie1_intc 0>, /* INT C */
+                                        <0 0 0 4 &pcie1_intc 0>; /* INT D */
+                        msi-map = <0x0 &gic_its 0x0 0x1000>;
+
+                        pcie1_intc: legacy-interrupt-controller@1 {
+                                interrupt-controller;
+                                #interrupt-cells = <1>;
+                                interrupt-parent = <&gic>;
+                                interrupts = <GIC_SPI 343 IRQ_TYPE_EDGE_RISING>;
+                        };
+                };
+
+		serdes0: serdes@900000 {
+			compatible = "ti,phy-k3-serdes0";
+			reg = <0x0 0x900000 0x0 0x2000>;
+                        reg-names = "serdes";
+			#phy-cells = <2>;
+			power-domains = <&k3_pds 153>;
+			clocks = <&k3_clks 153 4>;
+			clock-names = "fck";
+			assigned-clocks = <&k3_clks 153 4>;
+			assigned-clock-parents = <&k3_clks 153 8>;
+			mux-controls = <&mux>;
 		};
 	};
 };

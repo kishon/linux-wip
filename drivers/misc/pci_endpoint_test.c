@@ -141,7 +141,9 @@ static irqreturn_t pci_endpoint_test_irqhandler(int irq, void *dev_id)
 	struct pci_endpoint_test *test = dev_id;
 	u32 reg;
 
+	printk("%s %d\n", __func__, __LINE__);
 	reg = pci_endpoint_test_readl(test, PCI_ENDPOINT_TEST_STATUS);
+	printk("%s %x\n", __func__, reg);
 	if (reg & STATUS_IRQ_RAISED) {
 		test->last_irq = irq;
 		complete(&test->irq_raised);
@@ -232,6 +234,7 @@ static bool pci_endpoint_test_copy(struct pci_endpoint_test *test, size_t size)
 	size_t alignment = test->alignment;
 	u32 src_crc32;
 	u32 dst_crc32;
+	u32 reg;
 
 	if (size > SIZE_MAX - alignment)
 		goto err;
@@ -295,6 +298,10 @@ static bool pci_endpoint_test_copy(struct pci_endpoint_test *test, size_t size)
 	dst_crc32 = crc32_le(~0, dst_addr, size);
 	if (dst_crc32 == src_crc32)
 		ret = true;
+
+	reg = pci_endpoint_test_readl(test, PCI_ENDPOINT_TEST_STATUS);
+	reg &= ~(STATUS_COPY_SUCCESS | STATUS_COPY_FAIL);
+	pci_endpoint_test_writel(test, PCI_ENDPOINT_TEST_STATUS, reg);
 
 	dma_free_coherent(dev, size + alignment, orig_dst_addr,
 			  orig_dst_phys_addr);
@@ -362,6 +369,8 @@ static bool pci_endpoint_test_write(struct pci_endpoint_test *test, size_t size)
 	reg = pci_endpoint_test_readl(test, PCI_ENDPOINT_TEST_STATUS);
 	if (reg & STATUS_READ_SUCCESS)
 		ret = true;
+	reg &= ~(STATUS_READ_SUCCESS | STATUS_READ_FAIL);
+	pci_endpoint_test_writel(test, PCI_ENDPOINT_TEST_STATUS, reg);
 
 	dma_free_coherent(dev, size + alignment, orig_addr, orig_phys_addr);
 
@@ -381,6 +390,7 @@ static bool pci_endpoint_test_read(struct pci_endpoint_test *test, size_t size)
 	size_t offset;
 	size_t alignment = test->alignment;
 	u32 crc32;
+	u32 reg;
 
 	if (size > SIZE_MAX - alignment)
 		goto err;
@@ -417,6 +427,10 @@ static bool pci_endpoint_test_read(struct pci_endpoint_test *test, size_t size)
 	crc32 = crc32_le(~0, addr, size);
 	if (crc32 == pci_endpoint_test_readl(test, PCI_ENDPOINT_TEST_CHECKSUM))
 		ret = true;
+
+	reg = pci_endpoint_test_readl(test, PCI_ENDPOINT_TEST_STATUS);
+	reg &= ~(STATUS_WRITE_SUCCESS | STATUS_WRITE_FAIL);
+	pci_endpoint_test_writel(test, PCI_ENDPOINT_TEST_STATUS, reg);
 
 	dma_free_coherent(dev, size + alignment, orig_addr, orig_phys_addr);
 err:
