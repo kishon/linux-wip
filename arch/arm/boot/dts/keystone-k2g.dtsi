@@ -643,7 +643,7 @@
 
 		pcie0: pcie@21800000 {
 			compatible = "ti,keystone-pcie", "snps,dw-pcie";
-			reg =  <0x21800000 0x1000>, <0x21801000 0x1000>, <0x21802000 0x1000>;
+			reg =  <0x21801000 0x2000>, <0x21800000 0x1000>, <0x21802000 0x1000>;
 			reg-names = "app", "dbics", "config";
 			power-domains = <&k2g_pds 0x0019>;
 			clocks = <&k2g_clks 0x0019 0>;
@@ -660,6 +660,7 @@
 			phys = <&pcie0_phy>;
 			dma-coherent;
 			num-ob-windows = <32>;
+			num-viewport = <32>;
 			/* error interrupt */
 			interrupts = <GIC_SPI 60 IRQ_TYPE_EDGE_RISING>;
 			#interrupt-cells = <1>;
