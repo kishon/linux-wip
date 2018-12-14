@@ -266,31 +266,12 @@ static irqreturn_t ks_pcie_handle_error_irq(struct keystone_pcie *ks_pcie)
 	return IRQ_HANDLED;
 }
 
-static void ks_pcie_ack_legacy_irq(struct irq_data *d)
-{
-}
-
-static void ks_pcie_mask_legacy_irq(struct irq_data *d)
-{
-}
-
-static void ks_pcie_unmask_legacy_irq(struct irq_data *d)
-{
-}
-
-static struct irq_chip ks_pcie_legacy_irq_chip = {
-	.name = "Keystone-PCI-Legacy-IRQ",
-	.irq_ack = ks_pcie_ack_legacy_irq,
-	.irq_mask = ks_pcie_mask_legacy_irq,
-	.irq_unmask = ks_pcie_unmask_legacy_irq,
-};
-
 static int ks_pcie_init_legacy_irq_map(struct irq_domain *d,
 				       unsigned int irq,
 				       irq_hw_number_t hw_irq)
 {
-	irq_set_chip_and_handler(irq, &ks_pcie_legacy_irq_chip,
-				 handle_level_irq);
+	irq_set_chip_and_handler(irq, &dummy_irq_chip,
+				 handle_simple_irq);
 	irq_set_chip_data(irq, d->host_data);
 
 	return 0;
@@ -298,7 +279,6 @@ static int ks_pcie_init_legacy_irq_map(struct irq_domain *d,
 
 static const struct irq_domain_ops ks_pcie_legacy_irq_domain_ops = {
 	.map = ks_pcie_init_legacy_irq_map,
-	.xlate = irq_domain_xlate_onetwocell,
 };
 
 /**
