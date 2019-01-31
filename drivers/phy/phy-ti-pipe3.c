@@ -102,6 +102,16 @@
 #define MEM_OVRD_EQLEV			BIT(2)
 #define MEM_OVRD_EQFTC			BIT(1)
 
+
+
+#define SATAPHYRX_TRIM			    0x0000001C
+#define SATA_MEM_DLL_TRIM_SEL		GENMASK(31, 30)
+#define SATA_MEM_DLL_TRIM_SHIFT		30
+
+#define SATAPHYRX_DLL			    0x00000024
+#define SATA_MEM_DLL_PHINT_RATE		GENMASK(31, 30)
+#define SATA_MEM_DLL_PHINT_SHIFT    30
+
 /*
  * This is an Empirical value that works, need to confirm the actual
  * value required for the PIPE3PHY_PLL_CONFIGURATION2.PLL_IDLE status
@@ -356,6 +366,21 @@ static int ti_pipe3_init(struct phy *x)
 
 		return 0;
 	}
+
+
+	if (of_device_is_compatible(phy->dev->of_node, "ti,phy-pipe3-sata")) {
+
+	    val = ti_pipe3_readl(phy->phy_rx, SATAPHYRX_TRIM);
+        val &= ~SATA_MEM_DLL_TRIM_SEL;
+	    val |= 0x1 << SATA_MEM_DLL_TRIM_SHIFT;
+	    ti_pipe3_writel(phy->phy_rx, SATAPHYRX_TRIM, val);
+
+	    val = ti_pipe3_readl(phy->phy_rx, SATAPHYRX_DLL);
+	    val &= ~SATA_MEM_DLL_PHINT_RATE;
+        val |= 0x2 << SATA_MEM_DLL_PHINT_SHIFT;
+        ti_pipe3_writel(phy->phy_rx, SATAPHYRX_DLL, val);
+    }
+
 
 	/* Bring it out of IDLE if it is IDLE */
 	val = ti_pipe3_readl(phy->pll_ctrl_base, PLL_CONFIGURATION2);
