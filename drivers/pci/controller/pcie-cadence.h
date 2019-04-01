@@ -452,6 +452,8 @@ static inline u32 cdns_pcie_ep_fn_readl(struct cdns_pcie *pcie, u8 fn, u32 reg)
 
 int cdns_pcie_host_setup(struct cdns_pcie_rc *rc);
 int cdns_pcie_ep_setup(struct cdns_pcie_ep *ep);
+void __iomem *cdns_pci_map_bus(struct pci_bus *bus, unsigned int devfn,
+                                      int where);
 
 void cdns_pcie_set_outbound_region(struct cdns_pcie *pcie, u8 fn,
 				   u32 r, bool is_io,
