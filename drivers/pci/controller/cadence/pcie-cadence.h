@@ -233,6 +233,7 @@ struct cdns_pcie_ops {
 	void	(*write)(void __iomem *addr, int size, u32 value);
 	int	(*start_link)(struct cdns_pcie *pcie, bool start);
 	bool	(*is_link_up)(struct cdns_pcie *pcie);
+	u64     (*cpu_addr_fixup)(struct cdns_pcie *pcie, u64 cpu_addr);
 };
 
 /**
