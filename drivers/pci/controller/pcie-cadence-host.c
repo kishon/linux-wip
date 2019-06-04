@@ -3,6 +3,8 @@
 // Cadence PCIe host controller driver.
 // Author: Cyrille Pitchen <cyrille.pitchen@free-electrons.com>
 
+#include <linux/delay.h>
+#include <linux/gpio/consumer.h>
 #include <linux/kernel.h>
 #include <linux/of_address.h>
 #include <linux/of_pci.h>
@@ -208,6 +210,7 @@ int cdns_pcie_host_setup(struct cdns_pcie_rc *rc)
 	struct device_node *np = dev->of_node;
 	struct pci_host_bridge *bridge;
 	struct list_head resources;
+	struct gpio_desc *gpiod;
 	struct cdns_pcie *pcie;
 	struct resource *res;
 	int ret;
@@ -251,13 +254,36 @@ int cdns_pcie_host_setup(struct cdns_pcie_rc *rc)
 		dev_err(dev, "missing \"mem\"\n");
 		return -EINVAL;
 	}
+
 	pcie->mem_res = res;
+
+	gpiod = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
+	if (IS_ERR(gpiod)) {
+		ret = PTR_ERR(gpiod);
+		if (ret != -EPROBE_DEFER)
+			dev_err(dev, "Failed to get reset GPIO\n");
+		return ret;
+	}
 
 	ret = cdns_pcie_init_phy(dev, pcie);
 	if (ret) {
 		dev_err(dev, "failed to init phy\n");
 		return ret;
 	}
+
+	/*
+	 * "Power Sequencing and Reset Signal Timings" table in
+	 * PCI EXPRESS CARD ELECTROMECHANICAL SPECIFICATION, REV. 3.0
+	 * indicates PERST# should be deasserted after minimum of 100us
+	 * once REFCLK is stable. The REFCLK to the connector in RC
+	 * mode is selected while enabling the PHY. So deassert PERST#
+	 * after 100 us.
+	 */
+	if (gpiod) {
+		usleep_range(100, 200);
+		gpiod_set_value_cansleep(gpiod, 1);
+	}
+
 	platform_set_drvdata(pdev, pcie);
 
 	pm_runtime_enable(dev);
