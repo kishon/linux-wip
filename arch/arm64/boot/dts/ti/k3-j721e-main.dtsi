@@ -920,7 +920,7 @@
 		#size-cells = <0>;
 		clock-names = "fck";
 		clocks = <&k3_clks 187 0>;
-		power-domains = <&k3_pds 187 TI_SCI_PD_SHARED>;
+		power-domains = <&k3_pds 187 TI_SCI_PD_EXCLUSIVE>;
 	};
 
 	main_i2c1: i2c@2010000 {
