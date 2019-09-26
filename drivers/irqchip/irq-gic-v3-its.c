@@ -3560,9 +3560,40 @@ static int __init its_compute_its_list_map(struct resource *res,
 	return its_number;
 }
 
+static int its_enable_ti_workaround(struct its_node *its)
+{
+	struct its_device *its_dev[6];
+	void __iomem *addr = 0;
+	u32 dev_id;
+	int ret = 0;
+
+	for (dev_id = 0; dev_id < 6; dev_id++) {
+		its_dev[dev_id] = its_create_device(its, dev_id, 0x1, false);
+		if (!its_dev[dev_id])
+			return PTR_ERR(its_dev[dev_id]);
+
+		if (!addr) {
+			addr = ioremap(its->get_msi_base(its_dev[dev_id]), 0x4);
+			if (!addr) {
+				++dev_id;
+				ret = -ENOMEM;
+				goto free_its_dev;
+			}
+		}
+	}
+	writel(0x0, addr);
+
+free_its_dev:
+	while(--dev_id)
+		its_free_device(its_dev[dev_id]);
+
+	return ret;
+}
+
 static int __init its_probe_one(struct resource *res,
 				struct fwnode_handle *handle, int numa_node)
 {
+	struct device_node *node;
 	struct its_node *its;
 	void __iomem *its_base;
 	u32 val, ctlr;
@@ -3681,6 +3712,13 @@ static int __init its_probe_one(struct resource *res,
 	if (GITS_TYPER_HCC(typer))
 		its->flags |= ITS_FLAGS_SAVE_SUSPEND_STATE;
 
+	node = to_of_node(handle);
+	if (node && of_device_is_compatible(node, "ti,gic-v3-its")) {
+		err = its_enable_ti_workaround(its);
+		if (err)
+			goto out_free_tables;
+	}
+
 	err = its_init_domain(handle, its);
 	if (err)
 		goto out_free_tables;
@@ -3794,6 +3832,7 @@ int its_cpu_init(void)
 
 static const struct of_device_id its_device_id[] = {
 	{	.compatible	= "arm,gic-v3-its",	},
+	{	.compatible	= "ti,gic-v3-its",	},
 	{},
 };
 
