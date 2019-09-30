@@ -17,35 +17,6 @@
 #define CDNS_PCIE_EP_IRQ_PCI_ADDR_NONE		0x1
 #define CDNS_PCIE_EP_IRQ_PCI_ADDR_LEGACY	0x3
 
-/**
- * struct cdns_pcie_ep - private data for this PCIe endpoint controller driver
- * @pcie: Cadence PCIe controller
- * @max_regions: maximum number of regions supported by hardware
- * @ob_region_map: bitmask of mapped outbound regions
- * @ob_addr: base addresses in the AXI bus where the outbound regions start
- * @irq_phys_addr: base address on the AXI bus where the MSI/legacy IRQ
- *		   dedicated outbound regions is mapped.
- * @irq_cpu_addr: base address in the CPU space where a write access triggers
- *		  the sending of a memory write (MSI) / normal message (legacy
- *		  IRQ) TLP through the PCIe bus.
- * @irq_pci_addr: used to save the current mapping of the MSI/legacy IRQ
- *		  dedicated outbound region.
- * @irq_pci_fn: the latest PCI function that has updated the mapping of
- *		the MSI/legacy IRQ dedicated outbound region.
- * @irq_pending: bitmask of asserted legacy IRQs.
- */
-struct cdns_pcie_ep {
-	struct cdns_pcie		pcie;
-	u32				max_regions;
-	unsigned long			ob_region_map;
-	phys_addr_t			*ob_addr;
-	phys_addr_t			irq_phys_addr;
-	void __iomem			*irq_cpu_addr;
-	u64				irq_pci_addr;
-	u8				irq_pci_fn;
-	u8				irq_pending;
-};
-
 static int cdns_pcie_ep_write_header(struct pci_epc *epc, u8 fn,
 				     struct pci_epf_header *hdr)
 {
@@ -396,6 +367,9 @@ static int cdns_pcie_ep_start(struct pci_epc *epc)
 		cfg |= BIT(epf->func_no);
 	cdns_pcie_writel(pcie, CDNS_PCIE_LM_EP_FUNC_CFG, cfg);
 
+	if (pcie->ops->cdns_start_link)
+		return  pcie->ops->cdns_start_link(pcie, true);
+
 	return 0;
 }
 
@@ -424,29 +398,17 @@ static const struct pci_epc_ops cdns_pcie_epc_ops = {
 	.get_features	= cdns_pcie_ep_get_features,
 };
 
-static const struct of_device_id cdns_pcie_ep_of_match[] = {
-	{ .compatible = "cdns,cdns-pcie-ep" },
 
-	{ },
-};
-
-static int cdns_pcie_ep_probe(struct platform_device *pdev)
+int cdns_pcie_ep_setup(struct cdns_pcie_ep *ep)
 {
-	struct device *dev = &pdev->dev;
+	struct device *dev = ep->dev;
+	struct platform_device *pdev = to_platform_device(dev);
 	struct device_node *np = dev->of_node;
-	struct cdns_pcie_ep *ep;
-	struct cdns_pcie *pcie;
+	struct cdns_pcie *pcie = &ep->pcie;
 	struct pci_epc *epc;
 	struct resource *res;
 	int ret;
 	int phy_count;
-
-	ep = devm_kzalloc(dev, sizeof(*ep), GFP_KERNEL);
-	if (!ep)
-		return -ENOMEM;
-
-	pcie = &ep->pcie;
-	pcie->is_rc = false;
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "reg");
 	pcie->reg_base = devm_ioremap_resource(dev, res);
@@ -537,29 +499,3 @@ static int cdns_pcie_ep_probe(struct platform_device *pdev)
 
 	return ret;
 }
-
-static void cdns_pcie_ep_shutdown(struct platform_device *pdev)
-{
-	struct device *dev = &pdev->dev;
-	struct cdns_pcie *pcie = dev_get_drvdata(dev);
-	int ret;
-
-	ret = pm_runtime_put_sync(dev);
-	if (ret < 0)
-		dev_dbg(dev, "pm_runtime_put_sync failed\n");
-
-	pm_runtime_disable(dev);
-
-	cdns_pcie_disable_phy(pcie);
-}
-
-static struct platform_driver cdns_pcie_ep_driver = {
-	.driver = {
-		.name = "cdns-pcie-ep",
-		.of_match_table = cdns_pcie_ep_of_match,
-		.pm	= &cdns_pcie_pm_ops,
-	},
-	.probe = cdns_pcie_ep_probe,
-	.shutdown = cdns_pcie_ep_shutdown,
-};
-builtin_platform_driver(cdns_pcie_ep_driver);
