@@ -724,7 +724,7 @@
 		#size-cells = <0>;
 		clock-names = "fck";
 		clocks = <&k3_clks 187 0>;
-		power-domains = <&k3_pds 187>;
+		power-domains = <&k3_pds 187 TI_SCI_PD_EXCLUSIVE>;
 	};
 
 	main_i2c1: i2c@2010000 {
@@ -735,7 +735,7 @@
 		#size-cells = <0>;
 		clock-names = "fck";
 		clocks = <&k3_clks 188 0>;
-		power-domains = <&k3_pds 188>;
+		power-domains = <&k3_pds 188 TI_SCI_PD_EXCLUSIVE>;
 	};
 
 	main_i2c2: i2c@2020000 {
@@ -746,7 +746,7 @@
 		#size-cells = <0>;
 		clock-names = "fck";
 		clocks = <&k3_clks 189 0>;
-		power-domains = <&k3_pds 189>;
+		power-domains = <&k3_pds 189 TI_SCI_PD_EXCLUSIVE>;
 	};
 
 	main_i2c3: i2c@2030000 {
@@ -757,7 +757,7 @@
 		#size-cells = <0>;
 		clock-names = "fck";
 		clocks = <&k3_clks 190 0>;
-		power-domains = <&k3_pds 190>;
+		power-domains = <&k3_pds 190 TI_SCI_PD_EXCLUSIVE>;
 	};
 
 	main_i2c4: i2c@2040000 {
@@ -768,7 +768,7 @@
 		#size-cells = <0>;
 		clock-names = "fck";
 		clocks = <&k3_clks 191 0>;
-		power-domains = <&k3_pds 191>;
+		power-domains = <&k3_pds 191 TI_SCI_PD_EXCLUSIVE>;
 	};
 
 	main_i2c5: i2c@2050000 {
@@ -779,7 +779,7 @@
 		#size-cells = <0>;
 		clock-names = "fck";
 		clocks = <&k3_clks 192 0>;
-		power-domains = <&k3_pds 192>;
+		power-domains = <&k3_pds 192 TI_SCI_PD_EXCLUSIVE>;
 	};
 
 	main_i2c6: i2c@2060000 {
@@ -790,6 +790,6 @@
 		#size-cells = <0>;
 		clock-names = "fck";
 		clocks = <&k3_clks 193 0>;
-		power-domains = <&k3_pds 193>;
+		power-domains = <&k3_pds 193 TI_SCI_PD_EXCLUSIVE>;
 	};
 };
