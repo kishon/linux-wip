@@ -240,6 +240,7 @@ struct cdns_pcie_common_ops {
 struct cdns_pcie {
 	void __iomem		*reg_base;
 	struct resource		*mem_res;
+	struct device		*dev;
 	bool			is_rc;
 	u8			bus;
 	int			phy_count;
