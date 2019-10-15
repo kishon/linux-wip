@@ -26,22 +26,13 @@
 
 #define J721E_PCIE_USER_LINKSTATUS	0x14
 #define LINK_STATUS			GENMASK(1, 0)
+
 enum link_status {
 	NO_RECIEVERS_DETECTED,
 	LINK_TRAINING_IN_PROGRESS,
 	LINK_UP_DL_IN_PROGRESS,
 	LINK_UP_DL_COMPLETED,
 };
-
-#define J721E_TRANS_CTRL(a)		((a) * 0xc)
-#define J721E_TRANS_REQ_ID(a)		(((a) * 0xc) + 0x4)
-#define J721E_TRANS_VIRT_ID(a)		(((a) * 0xc) + 0x8)
-
-#define J721E_REQID_MASK		0xffff
-#define J721E_REQID_SHIFT		16
-
-#define J721E_EN			BIT(0)
-#define J721E_ATYPE_SHIFT		16
 
 #define J721E_MODE_RC			BIT(7)
 #define LANE_COUNT_MASK			BIT(8)
@@ -51,38 +42,14 @@ enum link_status {
 
 #define MAX_LANES			2
 
-enum j721e_atype {
-	PHYS_ADDR,
-	INT_ADDR,
-	VIRT_ADDR,
-	TRANS_ADDR,
-};
-
-#define to_j721e_pcie(x) container_of((x), struct j721e_pcie, plat_data)
-
 struct j721e_pcie {
 	struct device		*dev;
 	struct device_node	*node;
 	u32			mode;
 	u32			num_lanes;
-	struct cdns_pcie_plat_data plat_data;
 	void __iomem		*intd_cfg_base;
 	void __iomem		*user_cfg_base;
-	void __iomem		*vmap_lp_base;
-	u8			vmap_lp_index;
-	bool			enable_smmu;
 };
-
-static inline u32 j721e_pcie_vmap_readl(struct j721e_pcie *pcie, u32 offset)
-{
-	return readl(pcie->vmap_lp_base + offset);
-}
-
-static inline void j721e_pcie_vmap_writel(struct j721e_pcie *pcie, u32 offset,
-					  u32 value)
-{
-	writel(value, pcie->vmap_lp_base + offset);
-}
 
 static inline u32 j721e_pcie_intd_readl(struct j721e_pcie *pcie, u32 offset)
 {
@@ -106,58 +73,9 @@ static inline void j721e_pcie_user_writel(struct j721e_pcie *pcie, u32 offset,
 	writel(value, pcie->user_cfg_base + offset);
 }
 
-static void j721e_pcie_quirk(struct pci_dev *pci_dev)
+static int j721e_pcie_link_control(struct cdns_pcie *cdns_pcie, bool start)
 {
-	struct pci_bus *root_bus;
-	struct pci_dev *bridge;
-	struct j721e_pcie *pcie;
-	struct pci_bus *bus;
-	struct device *dev;
-	int index;
-	u32 val;
-
-	static const struct pci_device_id rc_pci_devids[] = {
-		{ PCI_DEVICE(0x104c, 0xb00d),
-		.class = PCI_CLASS_BRIDGE_PCI << 8, .class_mask = ~0, },
-		{ 0, },
-	};
-
-	dev = pci_get_host_bridge_device(pci_dev);
-	pcie = dev_get_drvdata(dev->parent->parent);
-	bus = pci_dev->bus;
-	index = pcie->vmap_lp_index;
-
-	if (!pcie->enable_smmu)
-		return;
-
-	if (index >= 32)
-		return;
-
-	if (pci_is_root_bus(bus))
-		return;
-
-	root_bus = bus;
-	while (!pci_is_root_bus(root_bus)) {
-		bridge = root_bus->self;
-		root_bus = root_bus->parent;
-	}
-
-	if (pci_match_id(rc_pci_devids, bridge)) {
-		val = J721E_REQID_MASK << J721E_REQID_SHIFT |
-			(bus->number << 8 | pci_dev->devfn);
-		j721e_pcie_vmap_writel(pcie, J721E_TRANS_REQ_ID(index), val);
-		val = VIRT_ADDR << J721E_ATYPE_SHIFT;
-		j721e_pcie_vmap_writel(pcie, J721E_TRANS_VIRT_ID(index), val);
-		j721e_pcie_vmap_writel(pcie, J721E_TRANS_CTRL(index), J721E_EN);
-	}
-
-	pcie->vmap_lp_index++;
-}
-DECLARE_PCI_FIXUP_ENABLE(PCI_ANY_ID, PCI_ANY_ID, j721e_pcie_quirk);
-
-static int j721e_pcie_start_link(struct cdns_pcie_plat_data *data, bool start)
-{
-	struct j721e_pcie *pcie = to_j721e_pcie(data);
+	struct j721e_pcie *pcie = dev_get_drvdata(cdns_pcie->dev);
 	u32 reg;
 
 	reg = j721e_pcie_user_readl(pcie, J721E_PCIE_USER_CMD_STATUS);
@@ -170,9 +88,9 @@ static int j721e_pcie_start_link(struct cdns_pcie_plat_data *data, bool start)
 	return 0;
 }
 
-static bool j721e_pcie_is_link_up(struct cdns_pcie_plat_data *data)
+static bool j721e_pcie_is_link_up(struct cdns_pcie *cdns_pcie)
 {
-	struct j721e_pcie *pcie = to_j721e_pcie(data);
+	struct j721e_pcie *pcie = dev_get_drvdata(cdns_pcie->dev);
 	u32 reg;
 
 	reg = j721e_pcie_user_readl(pcie, J721E_PCIE_USER_LINKSTATUS);
@@ -182,6 +100,11 @@ static bool j721e_pcie_is_link_up(struct cdns_pcie_plat_data *data)
 
 	return false;
 }
+
+static const struct cdns_pcie_common_ops j721e_ops_ops = {
+	.cdns_start_link = j721e_pcie_link_control,
+	.cdns_is_link_up = j721e_pcie_is_link_up,
+};
 
 static int j721e_pcie_set_mode(struct j721e_pcie *pcie, struct regmap *syscon)
 {
@@ -283,10 +206,10 @@ static int j721e_pcie_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct device_node *node = dev->of_node;
-	struct cdns_pcie_plat_data *plat_data;
-	struct platform_device *platform_dev;
-	struct device_node *child_node;
+	struct pci_host_bridge *bridge;
 	struct j721e_pcie *pcie;
+	struct cdns_pcie_rc *rc;
+	struct cdns_pcie_ep *ep;
 	struct resource *res;
 	void __iomem *base;
 	u32 num_lanes;
@@ -299,7 +222,6 @@ static int j721e_pcie_probe(struct platform_device *pdev)
 
 	pcie->dev = dev;
 	pcie->node = node;
-	plat_data = &pcie->plat_data;
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "intd_cfg");
 	base = devm_ioremap_resource(dev, res);
@@ -312,9 +234,6 @@ static int j721e_pcie_probe(struct platform_device *pdev)
 	if (IS_ERR(base))
 		return PTR_ERR(base);
 	pcie->user_cfg_base = base;
-
-	plat_data->start_link = j721e_pcie_start_link;
-	plat_data->is_link_up = j721e_pcie_is_link_up;
 
 	ret = of_property_read_u32(node, "pci-mode", &mode);
 	if (ret < 0) {
@@ -349,29 +268,19 @@ static int j721e_pcie_probe(struct platform_device *pdev)
 			goto err_get_sync;
 		}
 
-		res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
-						   "vmap");
-		base = devm_ioremap_resource(dev, res);
-		if (IS_ERR(base))
-			goto err_get_sync;
-		pcie->vmap_lp_base = base;
-
-		child_node = of_get_child_by_name(node, "pcie");
-		if (!child_node) {
-			dev_WARN(dev, "pcie-rc node is absent\n");
+		bridge = devm_pci_alloc_host_bridge(dev, sizeof(*rc));
+		if (!bridge) {
+			ret = -ENOMEM;
 			goto err_get_sync;
 		}
 
-		if (of_property_read_bool(child_node, "iommu-map"))
-			pcie->enable_smmu = true;
+		rc = pci_host_bridge_priv(bridge);
+		rc->dev = dev;
+		rc->pcie.ops = &j721e_ops_ops;
 
-		platform_dev = of_platform_device_create_pdata(child_node, NULL,
-							       plat_data, dev);
-		if (!platform_dev) {
-			ret = -ENODEV;
-			dev_err(dev, "Failed to create Cadence RC device\n");
+		ret = cdns_pcie_host_setup(rc);
+		if (ret < 0)
 			goto err_get_sync;
-		}
 
 		break;
 	case PCI_MODE_EP:
@@ -380,19 +289,18 @@ static int j721e_pcie_probe(struct platform_device *pdev)
 			goto err_get_sync;
 		}
 
-		child_node = of_get_child_by_name(node, "pcie-ep");
-		if (!child_node) {
-			dev_WARN(dev, "pcie-ep node is absent\n");
+		ep = devm_kzalloc(dev, sizeof(*ep), GFP_KERNEL);
+		if (!ep) {
+			ret = -ENOMEM;
 			goto err_get_sync;
 		}
 
-		platform_dev = of_platform_device_create_pdata(child_node, NULL,
-							       plat_data, dev);
-		if (!platform_dev) {
-			ret = -ENODEV;
-			dev_err(dev, "Failed to create Cadence EP device\n");
+		ep->dev = dev;
+		ep->pcie.ops = &j721e_ops_ops;
+
+		ret = cdns_pcie_ep_setup(ep);
+		if (ret < 0)
 			goto err_get_sync;
-		}
 
 		break;
 	default:
