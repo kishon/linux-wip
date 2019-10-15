@@ -51,6 +51,10 @@ struct j721e_pcie {
 	void __iomem		*user_cfg_base;
 };
 
+struct j721e_pcie_data {
+	u32			mode;
+};
+
 static inline u32 j721e_pcie_intd_readl(struct j721e_pcie *pcie, u32 offset)
 {
 	return readl(pcie->intd_cfg_base + offset);
@@ -195,9 +199,18 @@ static int j721e_pcie_ctrl_init(struct j721e_pcie *pcie)
 	return 0;
 }
 
+static const struct j721e_pcie_data j721e_pcie_rc_data = {
+	.mode = PCI_MODE_RC,
+};
+
+static const struct j721e_pcie_data j721e_pcie_ep_data = {
+	.mode = PCI_MODE_EP,
+};
+
 static const struct of_device_id of_j721e_pcie_match[] = {
 	{
-		.compatible = "ti,j721e-pcie",
+		.compatible = "ti,j721e-cdns-pcie-host",
+		.data = &j721e_pcie_rc_data,
 	},
 	{},
 };
@@ -206,7 +219,9 @@ static int j721e_pcie_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct device_node *node = dev->of_node;
+	const struct of_device_id *match;
 	struct pci_host_bridge *bridge;
+	struct j721e_pcie_data *data;
 	struct j721e_pcie *pcie;
 	struct cdns_pcie_rc *rc;
 	struct cdns_pcie_ep *ep;
@@ -216,6 +231,14 @@ static int j721e_pcie_probe(struct platform_device *pdev)
 	u32 mode;
 	int ret;
 
+        match = of_match_device(of_match_ptr(of_j721e_pcie_match), dev);
+        if (!match)
+                return -EINVAL;
+
+	data = (struct j721e_pcie_data *)match->data;
+	mode = (u32)data->mode;
+
+	printk("%s %d\n", __func__, __LINE__);
 	pcie = devm_kzalloc(dev, sizeof(*pcie), GFP_KERNEL);
 	if (!pcie)
 		return -ENOMEM;
@@ -276,6 +299,7 @@ static int j721e_pcie_probe(struct platform_device *pdev)
 
 		rc = pci_host_bridge_priv(bridge);
 		rc->dev = dev;
+		rc->pcie.dev = dev;
 		rc->pcie.ops = &j721e_ops_ops;
 
 		ret = cdns_pcie_host_setup(rc);
@@ -296,6 +320,7 @@ static int j721e_pcie_probe(struct platform_device *pdev)
 		}
 
 		ep->dev = dev;
+		ep->pcie.dev = dev;
 		ep->pcie.ops = &j721e_ops_ops;
 
 		ret = cdns_pcie_ep_setup(ep);
