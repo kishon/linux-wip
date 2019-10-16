@@ -172,7 +172,7 @@
 	};
 
 	serdes_wiz0: wiz@5000000 {
-		compatible = "ti,j721e-wiz";
+		compatible = "ti,j721e-wiz-16g";
 		#address-cells = <2>;
 		#size-cells = <2>;
 		power-domains = <&k3_pds 292 TI_SCI_PD_EXCLUSIVE>;
@@ -234,7 +234,7 @@
 	};
 
 	serdes_wiz1: wiz@5010000 {
-		compatible = "ti,j721e-wiz";
+		compatible = "ti,j721e-wiz-16g";
 		#address-cells = <2>;
 		#size-cells = <2>;
 		power-domains = <&k3_pds 293 TI_SCI_PD_EXCLUSIVE>;
@@ -296,7 +296,7 @@
 	};
 
 	serdes_wiz2: wiz@5020000 {
-		compatible = "ti,j721e-wiz";
+		compatible = "ti,j721e-wiz-16g";
 		#address-cells = <2>;
 		#size-cells = <2>;
 		power-domains = <&k3_pds 294 TI_SCI_PD_EXCLUSIVE>;
@@ -358,7 +358,7 @@
 	};
 
 	serdes_wiz3: wiz@5030000 {
-		compatible = "ti,j721e-wiz";
+		compatible = "ti,j721e-wiz-16g";
 		#address-cells = <2>;
 		#size-cells = <2>;
 		power-domains = <&k3_pds 295 TI_SCI_PD_EXCLUSIVE>;
@@ -462,6 +462,7 @@
 		cdns,max-outbound-regions = <16>;
 		max-functions = /bits/ 8 <2>;
 		dma-coherent;
+		status = "disabled";
 	};
 
 	pcie1_rc: pcie@2910000 {
@@ -489,6 +490,7 @@
 		dma-coherent;
 		ranges = <0x01000000 0x0 0x18001000  0x00 0x18001000  0x0 0x0010000>,
 			 <0x02000000 0x0 0x18011000  0x00 0x18011000  0x0 0x7fef000>;
+		status = "disabled";
 	};
 
 	pcie1_ep: pcie-ep@d800000 {
@@ -507,6 +509,7 @@
 		cdns,max-outbound-regions = <16>;
 		max-functions = /bits/ 8 <2>;
 		dma-coherent;
+		status = "disabled";
 	};
 
 	pcie2_rc: pcie@2920000 {
@@ -534,6 +537,7 @@
 		dma-coherent;
 		ranges = <0x01000000 0x00 0x00001000  0x44 0x00001000  0x0 0x0010000>,
 			 <0x02000000 0x00 0x00011000  0x44 0x00011000  0x0 0x7fef000>;
+		status = "disabled";
 	};
 
 	pcie2_ep: pcie-ep@e000000 {
@@ -552,6 +556,7 @@
 		cdns,max-outbound-regions = <16>;
 		max-functions = /bits/ 8 <2>;
 		dma-coherent;
+		status = "disabled";
 	};
 
 	main_uart0: serial@2800000 {
