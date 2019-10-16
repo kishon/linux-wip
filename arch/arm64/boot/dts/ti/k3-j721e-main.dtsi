@@ -28,6 +28,21 @@
 		#size-cells = <1>;
 		ranges = <0x0 0x0 0x00100000 0x1c000>;
 
+		pcie0_ctrl: pcie-ctrl@4070 {
+			compatible = "syscon";
+			reg = <0x00004070 0x4>;
+		};
+
+		pcie1_ctrl: pcie-ctrl@4074 {
+			compatible = "syscon";
+			reg = <0x00004074 0x4>;
+		};
+
+		pcie2_ctrl: pcie-ctrl@4078 {
+			compatible = "syscon";
+			reg = <0x00004078 0x4>;
+		};
+
 		serdes_ln_ctrl: serdes_ln_ctrl@4080 {
 			compatible = "mmio-mux";
 			#mux-control-cells = <1>;
@@ -421,11 +436,10 @@
 		#size-cells = <2>;
 		bus-range = <0x0 0xf>;
 		cdns,max-outbound-regions = <16>;
-		cdns,no-bar-match-nbits = <32>;
+		cdns,no-bar-match-nbits = <64>;
 		vendor-id = /bits/ 16 <0x104c>;
 		device-id = /bits/ 16 <0xb00d>;
 		msi-map = <0x0 &gic_its 0x0 0x10000>;
-		iommu-map = <0x0 &smmu0 0x0 0x1000>;
 		dma-coherent;
 		ranges = <0x01000000 0x0 0x10001000  0x00 0x10001000  0x0 0x0010000>,
 			 <0x02000000 0x0 0x10011000  0x00 0x10011000  0x0 0x7fef000>;
@@ -447,7 +461,6 @@
 		cdns,max-outbound-regions = <16>;
 		max-functions = /bits/ 8 <2>;
 		dma-coherent;
-		status = "disabled";
 	};
 
 	pcie1_rc: pcie@2910000 {
@@ -467,15 +480,13 @@
 		#size-cells = <2>;
 		bus-range = <0x0 0xf>;
 		cdns,max-outbound-regions = <16>;
-		cdns,no-bar-match-nbits = <32>;
+		cdns,no-bar-match-nbits = <64>;
 		vendor-id = /bits/ 16 <0x104c>;
 		device-id = /bits/ 16 <0xb00d>;
 		msi-map = <0x0 &gic_its 0x10000 0x10000>;
-		iommu-map = <0x0 &smmu0 0x04000 0x1000>;
 		dma-coherent;
 		ranges = <0x01000000 0x0 0x18001000  0x00 0x18001000  0x0 0x0010000>,
 			 <0x02000000 0x0 0x18011000  0x00 0x18011000  0x0 0x7fef000>;
-		status = "disabled";
 	};
 
 	pcie1_ep: pcie-ep@d800000 {
@@ -494,7 +505,6 @@
 		cdns,max-outbound-regions = <16>;
 		max-functions = /bits/ 8 <2>;
 		dma-coherent;
-		status = "disabled";
 	};
 
 	pcie2_rc: pcie@2920000 {
@@ -514,15 +524,13 @@
 		#size-cells = <2>;
 		bus-range = <0x0 0xf>;
 		cdns,max-outbound-regions = <16>;
-		cdns,no-bar-match-nbits = <32>;
+		cdns,no-bar-match-nbits = <64>;
 		vendor-id = /bits/ 16 <0x104c>;
 		device-id = /bits/ 16 <0xb00d>;
 		msi-map = <0x0 &gic_its 0x10000 0x10000>;
-		iommu-map = <0x0 &smmu0 0x08000 0x1000>;
 		dma-coherent;
 		ranges = <0x01000000 0x00 0x00001000  0x44 0x00001000  0x0 0x0010000>,
 			 <0x02000000 0x00 0x00011000  0x44 0x00011000  0x0 0x7fef000>;
-		status = "disabled";
 	};
 
 	pcie2_ep: pcie-ep@e000000 {
@@ -541,7 +549,6 @@
 		cdns,max-outbound-regions = <16>;
 		max-functions = /bits/ 8 <2>;
 		dma-coherent;
-		status = "disabled";
 	};
 
 	main_uart0: serial@2800000 {
