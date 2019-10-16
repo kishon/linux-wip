@@ -13,7 +13,7 @@
 
 #include "pcie-cadence.h"
 
-static void __iomem *cdns_pci_map_bus(struct pci_bus *bus, unsigned int devfn,
+void __iomem *cdns_pci_map_bus(struct pci_bus *bus, unsigned int devfn,
 				      int where)
 {
 	struct pci_host_bridge *bridge = pci_find_host_bridge(bus);
@@ -209,6 +209,10 @@ static int cdns_pcie_host_init(struct device *dev,
 	return err;
 }
 
+#define LINK_WAIT_MAX_RETRIES   10
+#define LINK_WAIT_USLEEP_MIN    90000
+#define LINK_WAIT_USLEEP_MAX    100000
+
 int cdns_pcie_host_setup(struct cdns_pcie_rc *rc)
 {
 	struct device *dev = rc->dev;
@@ -290,15 +294,6 @@ int cdns_pcie_host_setup(struct cdns_pcie_rc *rc)
 		gpiod_set_value_cansleep(gpiod, 1);
 	}
 
-	platform_set_drvdata(pdev, pcie);
-
-	pm_runtime_enable(dev);
-	ret = pm_runtime_get_sync(dev);
-	if (ret < 0) {
-		dev_err(dev, "pm_runtime_get_sync() failed\n");
-		goto err_get_sync;
-	}
-
 	if (pcie->ops->cdns_start_link) {
 		ret =  pcie->ops->cdns_start_link(pcie, true);
 		if (ret) {
@@ -306,6 +301,17 @@ int cdns_pcie_host_setup(struct cdns_pcie_rc *rc)
 			return ret;
 		}
 	}
+
+        int retries;
+
+        /* Check if the link is up or not */
+        for (retries = 0; retries < LINK_WAIT_MAX_RETRIES; retries++) {
+                if (pcie->ops->cdns_is_link_up(pcie)) {
+                        dev_info(dev, "Link up\n");
+			break;
+                }
+                usleep_range(LINK_WAIT_USLEEP_MIN, LINK_WAIT_USLEEP_MAX);
+        }
 
 	ret = cdns_pcie_host_init(dev, &resources, rc);
 	if (ret)

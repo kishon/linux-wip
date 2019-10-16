@@ -182,17 +182,20 @@ int cdns_pcie_enable_phy(struct cdns_pcie *pcie)
 	int ret;
 	int i;
 
+	printk("%s %d\n", __func__, __LINE__);
 	for (i = 0; i < pcie->phy_count; i++) {
 		ret = phy_init(pcie->phy[i]);
 		if (ret < 0)
 			goto err_phy;
 
+	printk("%s %d\n", __func__, __LINE__);
 		ret = phy_power_on(pcie->phy[i]);
 		if (ret < 0) {
 			phy_exit(pcie->phy[i]);
 			goto err_phy;
 		}
 	}
+	printk("%s %d\n", __func__, __LINE__);
 
 	return 0;
 
@@ -215,6 +218,7 @@ int cdns_pcie_init_phy(struct device *dev, struct cdns_pcie *pcie)
 	int ret;
 	const char *name;
 
+	printk("%s %d\n", __func__, __LINE__);
 	phy_count = of_property_count_strings(np, "phy-names");
 	if (phy_count < 1) {
 		dev_err(dev, "no phy-names.  PHY will not be initialized\n");
@@ -222,6 +226,7 @@ int cdns_pcie_init_phy(struct device *dev, struct cdns_pcie *pcie)
 		return 0;
 	}
 
+	printk("%s %d\n", __func__, __LINE__);
 	phy = devm_kcalloc(dev, phy_count, sizeof(*phy), GFP_KERNEL);
 	if (!phy)
 		return -ENOMEM;
@@ -231,18 +236,21 @@ int cdns_pcie_init_phy(struct device *dev, struct cdns_pcie *pcie)
 		return -ENOMEM;
 
 	for (i = 0; i < phy_count; i++) {
+	printk("%s %d\n", __func__, __LINE__);
 		of_property_read_string_index(np, "phy-names", i, &name);
 		phy[i] = devm_phy_get(dev, name);
 		if (IS_ERR(phy[i])) {
 			ret = PTR_ERR(phy[i]);
 			goto err_phy;
 		}
+	printk("%s %d\n", __func__, __LINE__);
 		link[i] = device_link_add(dev, &phy[i]->dev, DL_FLAG_STATELESS);
 		if (!link[i]) {
 			devm_phy_put(dev, phy[i]);
 			ret = -EINVAL;
 			goto err_phy;
 		}
+	printk("%s %d\n", __func__, __LINE__);
 	}
 
 	pcie->phy_count = phy_count;
@@ -253,6 +261,7 @@ int cdns_pcie_init_phy(struct device *dev, struct cdns_pcie *pcie)
 	if (ret)
 		goto err_phy;
 
+	printk("%s %d\n", __func__, __LINE__);
 	return 0;
 
 err_phy:
