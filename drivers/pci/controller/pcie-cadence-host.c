@@ -260,10 +260,8 @@ int cdns_pcie_host_setup(struct cdns_pcie_rc *rc)
 	rc->cfg_res = res;
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "mem");
-	if (!res) {
-		dev_err(dev, "missing \"mem\"\n");
-		return -EINVAL;
-	}
+	if (!res)
+		dev_dbg(dev, "missing \"mem\"\n");
 
 	pcie->mem_res = res;
 
