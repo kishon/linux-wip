@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
+/**
  * pci-j721e - PCIe controller driver for TI's J721E SoCs
  *
- * Copyright (C) 2018-2019 Texas Instruments Incorporated - http://www.ti.com
- *
+ * Copyright (C) 2019 Texas Instruments Incorporated - http://www.ti.com
  * Author: Kishon Vijay Abraham I <kishon@ti.com>
  */
 
@@ -199,6 +198,40 @@ static int j721e_pcie_ctrl_init(struct j721e_pcie *pcie)
 	return 0;
 }
 
+static int cdns_ti_pcie_config_read(struct pci_bus *bus, unsigned int devfn,
+				    int where, int size, u32 *value)
+{
+	struct pci_host_bridge *bridge = pci_find_host_bridge(bus);
+	struct cdns_pcie_rc *rc = pci_host_bridge_priv(bridge);
+	unsigned int busn = bus->number;
+
+	if (busn == rc->bus_range->start)
+		return pci_generic_config_read32(bus, devfn, where, size,
+						 value);
+
+	return pci_generic_config_read(bus, devfn, where, size, value);
+}
+
+static int cdns_ti_pcie_config_write(struct pci_bus *bus, unsigned int devfn,
+				     int where, int size, u32 value)
+{
+	struct pci_host_bridge *bridge = pci_find_host_bridge(bus);
+	struct cdns_pcie_rc *rc = pci_host_bridge_priv(bridge);
+	unsigned int busn = bus->number;
+
+	if (busn == rc->bus_range->start)
+		return pci_generic_config_write32(bus, devfn, where, size,
+						  value);
+
+	return pci_generic_config_write(bus, devfn, where, size, value);
+}
+
+static struct pci_ops cdns_ti_pcie_host_ops = {
+	.map_bus	= cdns_pci_map_bus,
+	.read		= cdns_ti_pcie_config_read,
+	.write		= cdns_ti_pcie_config_write,
+};
+
 static const struct j721e_pcie_data j721e_pcie_rc_data = {
 	.mode = PCI_MODE_RC,
 };
@@ -238,13 +271,13 @@ static int j721e_pcie_probe(struct platform_device *pdev)
 	data = (struct j721e_pcie_data *)match->data;
 	mode = (u32)data->mode;
 
-	printk("%s %d\n", __func__, __LINE__);
 	pcie = devm_kzalloc(dev, sizeof(*pcie), GFP_KERNEL);
 	if (!pcie)
 		return -ENOMEM;
 
 	pcie->dev = dev;
 	pcie->node = node;
+	pcie->mode = mode;
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "intd_cfg");
 	base = devm_ioremap_resource(dev, res);
@@ -257,13 +290,6 @@ static int j721e_pcie_probe(struct platform_device *pdev)
 	if (IS_ERR(base))
 		return PTR_ERR(base);
 	pcie->user_cfg_base = base;
-
-	ret = of_property_read_u32(node, "pci-mode", &mode);
-	if (ret < 0) {
-		dev_err(dev, "Failed to get pci-mode binding\n");
-		return ret;
-	}
-	pcie->mode = mode;
 
 	ret = of_property_read_u32(node, "num-lanes", &num_lanes);
 	if (ret || num_lanes > MAX_LANES)
@@ -297,6 +323,7 @@ static int j721e_pcie_probe(struct platform_device *pdev)
 			goto err_get_sync;
 		}
 
+		bridge->ops = &cdns_ti_pcie_host_ops;
 		rc = pci_host_bridge_priv(bridge);
 		rc->dev = dev;
 		rc->pcie.dev = dev;
