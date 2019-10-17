@@ -107,6 +107,8 @@ static bool j721e_pcie_is_link_up(struct cdns_pcie *cdns_pcie)
 static const struct cdns_pcie_common_ops j721e_ops_ops = {
 	.cdns_start_link = j721e_pcie_link_control,
 	.cdns_is_link_up = j721e_pcie_is_link_up,
+	.read = cdns_pcie_read32,
+	.write = cdns_pcie_write32,
 };
 
 static int j721e_pcie_set_mode(struct j721e_pcie *pcie, struct regmap *syscon)
