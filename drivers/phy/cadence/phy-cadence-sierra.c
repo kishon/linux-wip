@@ -32,8 +32,9 @@
 #define SIERRA_CMN_PLLLC_BWCAL_MODE0_PREG		0x50
 #define SIERRA_CMN_PLLLC_SS_TIME_STEPSIZE_MODE_PREG	0x62
 
-#define SIERRA_LANE_CDB_OFFSET(ln, offset)	\
-				(0x4000 + ((ln) * (0x800 >> (2 - (offset)))))
+#define SIERRA_LANE_CDB_OFFSET(ln, block_offset, reg_offset)	\
+				((0x4000 << (block_offset)) + \
+				 (((ln) << 9) << (reg_offset)))
 
 #define SIERRA_DET_STANDEC_A_PREG			0x000
 #define SIERRA_DET_STANDEC_B_PREG			0x001
@@ -135,7 +136,8 @@
 #define SIERRA_DEQ_TAU_CTRL1_FAST_MAINT_PREG		0x14F
 #define SIERRA_DEQ_TAU_CTRL1_SLOW_MAINT_PREG		0x150
 
-#define SIERRA_PHY_CONFIG_CTRL_OFFSET			0xc000
+#define SIERRA_PHY_CONFIG_CTRL_OFFSET(block_offset)	\
+					(0xc000 << (block_offset))
 #define SIERRA_PHY_PLL_CFG				0xe
 
 #define SIERRA_MACRO_ID					0x00007364
@@ -364,8 +366,7 @@ static int cdns_sierra_get_optional(struct cdns_sierra_inst *inst,
 static const struct of_device_id cdns_sierra_id_table[];
 
 static struct regmap *cdns_regmap_init(struct device *dev, void __iomem *base,
-				       u32 block_offset, u8 block_offset_shift,
-				       u8 reg_offset_shift,
+				       u32 block_offset, u8 reg_offset_shift,
 				       const struct regmap_config *config)
 {
 	struct cdns_regmap_cdb_context *ctx;
@@ -375,7 +376,7 @@ static struct regmap *cdns_regmap_init(struct device *dev, void __iomem *base,
 		return ERR_PTR(-ENOMEM);
 
 	ctx->dev = dev;
-	ctx->base = base + (block_offset << block_offset_shift);
+	ctx->base = base + block_offset;
 	ctx->reg_offset_shift = reg_offset_shift;
 
 	return devm_regmap_init(dev, NULL, ctx, config);
@@ -427,9 +428,10 @@ static int cdns_regmap_init_blocks(struct cdns_sierra_phy *sp,
 	int i;
 
 	for (i = 0; i < SIERRA_MAX_LANES; i++) {
-		block_offset = SIERRA_LANE_CDB_OFFSET(i, reg_offset_shift);
+		block_offset = SIERRA_LANE_CDB_OFFSET(i, block_offset_shift,
+						      reg_offset_shift);
 		regmap = cdns_regmap_init(dev, base, block_offset,
-					  block_offset_shift, reg_offset_shift,
+					  reg_offset_shift,
 					  &cdns_sierra_lane_cdb_config[i]);
 		if (IS_ERR(regmap)) {
 			dev_err(dev, "Failed to init lane CDB regmap\n");
@@ -439,7 +441,7 @@ static int cdns_regmap_init_blocks(struct cdns_sierra_phy *sp,
 	}
 
 	regmap = cdns_regmap_init(dev, base, SIERRA_COMMON_CDB_OFFSET,
-				  block_offset_shift, reg_offset_shift,
+				  reg_offset_shift,
 				  &cdns_sierra_common_cdb_config);
 	if (IS_ERR(regmap)) {
 		dev_err(dev, "Failed to init common CDB regmap\n");
@@ -447,8 +449,8 @@ static int cdns_regmap_init_blocks(struct cdns_sierra_phy *sp,
 	}
 	sp->regmap_common_cdb = regmap;
 
-	regmap = cdns_regmap_init(dev, base, SIERRA_PHY_CONFIG_CTRL_OFFSET,
-				  block_offset_shift, reg_offset_shift,
+	block_offset = SIERRA_PHY_CONFIG_CTRL_OFFSET(block_offset_shift);
+	regmap = cdns_regmap_init(dev, base, block_offset, reg_offset_shift,
 				  &cdns_sierra_phy_config_ctrl_config);
 	if (IS_ERR(regmap)) {
 		dev_err(dev, "Failed to init PHY config and control regmap\n");
