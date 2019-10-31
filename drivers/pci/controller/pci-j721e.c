@@ -33,6 +33,16 @@ enum link_status {
 	LINK_UP_DL_COMPLETED,
 };
 
+#define J721E_TRANS_CTRL(a)		((a) * 0xc)
+#define J721E_TRANS_REQ_ID(a)		(((a) * 0xc) + 0x4)
+#define J721E_TRANS_VIRT_ID(a)		(((a) * 0xc) + 0x8)
+
+#define J721E_REQID_MASK		0xffff
+#define J721E_REQID_SHIFT		16
+
+#define J721E_EN			BIT(0)
+#define J721E_ATYPE_SHIFT		16
+
 #define J721E_MODE_RC			BIT(7)
 #define LANE_COUNT_MASK			BIT(8)
 #define LANE_COUNT(n)			((n) << 8)
@@ -41,6 +51,13 @@ enum link_status {
 
 #define MAX_LANES			2
 
+enum j721e_atype {
+	PHYS_ADDR,
+	INT_ADDR,
+	VIRT_ADDR,
+	TRANS_ADDR,
+};
+
 struct j721e_pcie {
 	struct device		*dev;
 	struct device_node	*node;
@@ -48,11 +65,25 @@ struct j721e_pcie {
 	u32			num_lanes;
 	void __iomem		*intd_cfg_base;
 	void __iomem		*user_cfg_base;
+	void __iomem		*vmap_lp_base;
+	u8			vmap_lp_index;
+	bool			enable_smmu;
 };
 
 struct j721e_pcie_data {
 	u32			mode;
 };
+
+static inline u32 j721e_pcie_vmap_readl(struct j721e_pcie *pcie, u32 offset)
+{
+	return readl(pcie->vmap_lp_base + offset);
+}
+
+static inline void j721e_pcie_vmap_writel(struct j721e_pcie *pcie, u32 offset,
+					  u32 value)
+{
+	writel(value, pcie->vmap_lp_base + offset);
+}
 
 static inline u32 j721e_pcie_intd_readl(struct j721e_pcie *pcie, u32 offset)
 {
@@ -75,6 +106,61 @@ static inline void j721e_pcie_user_writel(struct j721e_pcie *pcie, u32 offset,
 {
 	writel(value, pcie->user_cfg_base + offset);
 }
+
+static void j721e_pcie_quirk(struct pci_dev *pci_dev)
+{
+	struct pci_bus *root_bus;
+	struct pci_dev *bridge;
+	struct j721e_pcie *pcie;
+	struct pci_bus *bus;
+	struct device *dev;
+	int index;
+	u32 val;
+
+	static const struct pci_device_id rc_pci_devids[] = {
+		{ PCI_DEVICE(0x104c, 0xb00d),
+		.class = PCI_CLASS_BRIDGE_PCI << 8, .class_mask = ~0, },
+		{ 0, },
+	};
+
+	dev = pci_get_host_bridge_device(pci_dev);
+	if (!(dev && dev->parent))
+		return;
+
+	pcie = dev_get_drvdata(dev->parent);
+	if (!pcie)
+		return;
+
+	bus = pci_dev->bus;
+	index = pcie->vmap_lp_index;
+
+	if (!pcie->enable_smmu)
+		return;
+
+	if (index >= 32)
+		return;
+
+	if (pci_is_root_bus(bus))
+		return;
+
+	root_bus = bus;
+	while (!pci_is_root_bus(root_bus)) {
+		bridge = root_bus->self;
+		root_bus = root_bus->parent;
+	}
+
+	if (pci_match_id(rc_pci_devids, bridge)) {
+		val = J721E_REQID_MASK << J721E_REQID_SHIFT |
+			(bus->number << 8 | pci_dev->devfn);
+		j721e_pcie_vmap_writel(pcie, J721E_TRANS_REQ_ID(index), val);
+		val = VIRT_ADDR << J721E_ATYPE_SHIFT;
+		j721e_pcie_vmap_writel(pcie, J721E_TRANS_VIRT_ID(index), val);
+		j721e_pcie_vmap_writel(pcie, J721E_TRANS_CTRL(index), J721E_EN);
+	}
+
+	pcie->vmap_lp_index++;
+}
+DECLARE_PCI_FIXUP_ENABLE(PCI_ANY_ID, PCI_ANY_ID, j721e_pcie_quirk);
 
 static int j721e_pcie_link_control(struct cdns_pcie *cdns_pcie, bool start)
 {
@@ -319,11 +405,24 @@ static int j721e_pcie_probe(struct platform_device *pdev)
 			goto err_get_sync;
 		}
 
+		printk("%s %d\n", __func__, __LINE__);
+		res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
+						   "vmap");
+		base = devm_ioremap_resource(dev, res);
+		if (IS_ERR(base))
+			goto err_get_sync;
+		printk("%s %d\n", __func__, __LINE__);
+		pcie->vmap_lp_base = base;
+
 		bridge = devm_pci_alloc_host_bridge(dev, sizeof(*rc));
 		if (!bridge) {
 			ret = -ENOMEM;
 			goto err_get_sync;
 		}
+		printk("%s %d\n", __func__, __LINE__);
+
+		if (of_property_read_bool(node, "iommu-map"))
+			pcie->enable_smmu = true;
 
 		bridge->ops = &cdns_ti_pcie_host_ops;
 		rc = pci_host_bridge_priv(bridge);
@@ -334,6 +433,7 @@ static int j721e_pcie_probe(struct platform_device *pdev)
 		ret = cdns_pcie_host_setup(rc);
 		if (ret < 0)
 			goto err_get_sync;
+		printk("%s %d\n", __func__, __LINE__);
 
 		break;
 	case PCI_MODE_EP:
