@@ -423,9 +423,10 @@
 		compatible = "ti,j721e-cdns-pcie-host";
 		reg = <0x00 0x02900000 0x00 0x1000>,
 		      <0x00 0x02907000 0x00 0x400>,
+		      <0x0 0x02905000 0x0 0x00000400>,
 		      <0x00 0x0d000000 0x00 0x00800000>,
 		      <0x00 0x10000000 0x00 0x00001000>;
-		reg-names = "intd_cfg", "user_cfg", "reg", "cfg";
+		reg-names = "intd_cfg", "user_cfg", "vmap", "reg", "cfg";
 		ti,syscon-pcie-ctrl = <&pcie0_ctrl>;
 		max-link-speed = <3>;
 		num-lanes = <2>;
