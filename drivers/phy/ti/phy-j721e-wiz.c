@@ -172,11 +172,11 @@ static struct clk_div_table clk_div_table[] = {
 static struct wiz_clk_div_sel clk_div_sel[] = {
 	{
 		.table = clk_div_table,
-		.node_name = "cmn_refclk",
+		.node_name = "cmn_refclk_dig_div",
 	},
 	{
 		.table = clk_div_table,
-		.node_name = "cmn_refclk1",
+		.node_name = "cmn_refclk1_dig_div",
 	},
 };
 
