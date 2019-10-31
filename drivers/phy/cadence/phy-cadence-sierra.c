@@ -196,7 +196,7 @@ struct cdns_sierra_phy {
 	struct regmap_field *phy_pll_cfg_1;
 	struct regmap_field *pllctrl_lock[SIERRA_MAX_LANES];
 	struct clk *clk;
-	struct clk *cmn_refclk;
+	struct clk *cmn_refclk_dig_div;
 	struct clk *cmn_refclk1_dig_div;
 	int nsubnodes;
 	u32 num_lanes;
