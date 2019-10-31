@@ -60,7 +60,7 @@ patternProperties:
       WIZ node should have subnodes for each of the PLLs present in
       the SERDES.
 
-  "^cmn_refclk1?$":
+  "^cmn_refclk1?_dig_div$":
     type: object
     description: |
       WIZ node should have subnodes for each of the PMA common refclock
@@ -125,15 +125,15 @@ examples:
                   assigned-clock-parents = <&k3_clks 293 0>;
            };
 
-           cmn_refclk {
+           cmn_refclk_dig_div {
                   clocks = <&wiz1_refclk_dig>;
-                  clock-output-names = "wiz1_cmn_refclk";
+                  clock-output-names = "wiz1_cmn_refclk_dig_div";
                   #clock-cells = <0>;
            };
 
-           cmn_refclk1 {
+           cmn_refclk1_dig_div {
                   clocks = <&wiz1_pll1_refclk>;
-                  clock-output-names = "wiz1_cmn_refclk1";
+                  clock-output-names = "wiz1_cmn_refclk1_dig_div";
                   #clock-cells = <0>;
            };
 
@@ -153,7 +153,7 @@ examples:
                   #size-cells = <0>;
                   resets = <&serdes_wiz0 0>;
                   reset-names = "sierra_reset";
-                  clocks = <&wiz0_cmn_refclk>, <&wiz0_cmn_refclk1>;
-                  clock-names = "cmn_refclk", "cmn_refclk1";
+                  clocks = <&wiz0_cmn_refclk_dig_div>, <&wiz0_cmn_refclk1_dig_div>;
+                  clock-names = "cmn_refclk_dig_div", "cmn_refclk1_dig_div";
            };
     };
