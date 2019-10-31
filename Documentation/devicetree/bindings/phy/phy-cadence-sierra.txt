@@ -17,9 +17,9 @@ Required properties:
 Optional properties:
 - clocks:		Must contain an entry in clock-names.
 			See ../clocks/clock-bindings.txt for details.
-- clock-names:		Must be "phy_clk". Must contain "cmn_refclk" and
-			"cmn_refclk1" for configuring the frequency of the
-			clock to the lanes.
+- clock-names:		Must be "phy_clk". Must contain "cmn_refclk_dig_div" and
+			"cmn_refclk1_dig_div" for configuring the frequency of
+			the clock to the lanes.
 - cdns,autoconf:	A boolean property whose presence indicates that the
 			PHY registers will be configured by hardware. If not
 			present, all sub-node optional properties must be
