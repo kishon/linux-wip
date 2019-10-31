@@ -43,8 +43,8 @@ enum wiz_refclk_mux_sel {
 };
 
 enum wiz_refclk_div_sel {
-	CMN_REFCLK,
-	CMN_REFCLK1,
+	CMN_REFCLK_DIG_DIV,
+	CMN_REFCLK1_DIG_DIV,
 };
 
 static const struct reg_field por_en = REG_FIELD(WIZ_SERDES_CTRL, 31, 31);
@@ -322,7 +322,7 @@ static int wiz_regfield_init(struct wiz *wiz)
 		return PTR_ERR(wiz->pma_cmn_refclk_mode);
 	}
 
-	clk_div_sel = &wiz->clk_div_sel[CMN_REFCLK];
+	clk_div_sel = &wiz->clk_div_sel[CMN_REFCLK_DIG_DIV];
 	clk_div_sel->field = devm_regmap_field_alloc(dev, regmap,
 						     pma_cmn_refclk_dig_div);
 	if (IS_ERR(clk_div_sel->field)) {
@@ -331,7 +331,7 @@ static int wiz_regfield_init(struct wiz *wiz)
 	}
 
 	if (wiz->type == J721E_WIZ_16G) {
-		clk_div_sel = &wiz->clk_div_sel[CMN_REFCLK1];
+		clk_div_sel = &wiz->clk_div_sel[CMN_REFCLK1_DIG_DIV];
 		clk_div_sel->field =
 			devm_regmap_field_alloc(dev, regmap,
 						pma_cmn_refclk1_dig_div);
