@@ -436,7 +436,7 @@
 		#size-cells = <2>;
 		bus-range = <0x0 0xf>;
 		cdns,max-outbound-regions = <16>;
-		cdns,no-bar-match-nbits = <32>;
+		cdns,no-bar-match-nbits = <64>;
 		vendor-id = /bits/ 16 <0x104c>;
 		device-id = /bits/ 16 <0xb00d>;
 		msi-map = <0x0 &gic_its 0x0 0x10000>;
@@ -482,7 +482,7 @@
 		#size-cells = <2>;
 		bus-range = <0x0 0xf>;
 		cdns,max-outbound-regions = <16>;
-		cdns,no-bar-match-nbits = <32>;
+		cdns,no-bar-match-nbits = <64>;
 		vendor-id = /bits/ 16 <0x104c>;
 		device-id = /bits/ 16 <0xb00d>;
 		msi-map = <0x0 &gic_its 0x10000 0x10000>;
@@ -529,7 +529,7 @@
 		#size-cells = <2>;
 		bus-range = <0x0 0xf>;
 		cdns,max-outbound-regions = <16>;
-		cdns,no-bar-match-nbits = <32>;
+		cdns,no-bar-match-nbits = <64>;
 		vendor-id = /bits/ 16 <0x104c>;
 		device-id = /bits/ 16 <0xb00d>;
 		msi-map = <0x0 &gic_its 0x10000 0x10000>;
