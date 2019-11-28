@@ -173,8 +173,8 @@
 
 	serdes_wiz0: wiz@5000000 {
 		compatible = "ti,j721e-wiz-16g";
-		#address-cells = <2>;
-		#size-cells = <2>;
+		#address-cells = <1>;
+		#size-cells = <1>;
 		power-domains = <&k3_pds 292 TI_SCI_PD_EXCLUSIVE>;
 		clocks = <&k3_clks 292 5>, <&k3_clks 292 11>, <&dummy_cmn_refclk>;
 		clock-names = "fck", "core_ref_clk", "ext_ref_clk";
@@ -182,7 +182,7 @@
 		assigned-clock-parents = <&k3_clks 292 15>, <&k3_clks 292 4>;
 		num-lanes = <2>;
 		#reset-cells = <1>;
-		ranges;
+		ranges = <0x5000000 0x0 0x5000000 0x10000>;
 
 		wiz0_pll0_refclk: pll0_refclk {
 			clocks = <&k3_clks 292 11>, <&dummy_cmn_refclk>;
@@ -223,7 +223,7 @@
 		serdes0: serdes@5000000 {
 			compatible = "ti,sierra-phy-t0";
 			reg-names = "serdes";
-			reg = <0x00 0x5000000 0x00 0x10000>;
+			reg = <0x5000000 0x10000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 			resets = <&serdes_wiz0 0>;
