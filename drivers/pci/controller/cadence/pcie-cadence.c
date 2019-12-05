@@ -205,6 +205,19 @@ err_phy:
 	return ret;
 }
 
+void cdns_pcie_cleanup_phy(struct cdns_pcie *pcie)
+{
+	struct device *dev = pcie->dev;
+	int phy_count;
+
+	cdns_pcie_disable_phy(pcie);
+	phy_count = pcie->phy_count;
+	while (phy_count--) {
+		device_link_del(pcie->link[phy_count]);
+		devm_phy_put(dev, pcie->phy[phy_count]);
+	}
+}
+
 int cdns_pcie_init_phy(struct device *dev, struct cdns_pcie *pcie)
 {
 	struct device_node *np = dev->of_node;
