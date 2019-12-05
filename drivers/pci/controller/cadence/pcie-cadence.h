@@ -10,6 +10,11 @@
 #include <linux/pci.h>
 #include <linux/phy/phy.h>
 
+/* Parameters for the waiting for link up routine */
+#define LINK_WAIT_MAX_RETRIES	10
+#define LINK_WAIT_USLEEP_MIN	90000
+#define LINK_WAIT_USLEEP_MAX	100000
+
 /*
  * Local Management Registers
  */
@@ -226,6 +231,8 @@ enum cdns_pcie_msg_routing {
 struct cdns_pcie_ops {
 	u32	(*read)(void __iomem *addr, int size);
 	void	(*write)(void __iomem *addr, int size, u32 value);
+	int	(*start_link)(struct cdns_pcie *pcie, bool start);
+	bool	(*is_link_up)(struct cdns_pcie *pcie);
 };
 
 /**
@@ -445,6 +452,22 @@ static inline u32 cdns_pcie_ep_fn_readl(struct cdns_pcie *pcie, u8 fn, u32 reg)
 		return pcie->ops->read(addr, 0x4);
 
 	return readl(addr);
+}
+
+static inline int cdns_pcie_start_link(struct cdns_pcie *pcie, bool start)
+{
+	if (pcie->ops->start_link)
+		return pcie->ops->start_link(pcie, start);
+
+	return 0;
+}
+
+static inline bool cdns_pcie_is_link_up(struct cdns_pcie *pcie)
+{
+	if (pcie->ops->is_link_up)
+		return pcie->ops->is_link_up(pcie);
+
+	return true;
 }
 
 #ifdef CONFIG_PCIE_CADENCE_HOST
