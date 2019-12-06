@@ -6,6 +6,7 @@
 #include <linux/delay.h>
 #include <linux/kernel.h>
 #include <linux/of.h>
+#include <linux/of_address.h>
 #include <linux/pci-epc.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
@@ -409,7 +410,9 @@ int cdns_pcie_ep_setup(struct cdns_pcie_ep *ep)
 	struct device *dev = ep->pcie.dev;
 	struct platform_device *pdev = to_platform_device(dev);
 	struct device_node *np = dev->of_node;
+	struct device_node *mem_node = NULL;
 	struct cdns_pcie *pcie = &ep->pcie;
+	struct resource mem_res;
 	struct resource *res;
 	struct pci_epc *epc;
 	int ret;
@@ -455,8 +458,18 @@ int cdns_pcie_ep_setup(struct cdns_pcie_ep *ep)
 	if (of_property_read_u8(np, "max-functions", &epc->max_functions) < 0)
 		epc->max_functions = 1;
 
-	ret = pci_epc_mem_init(epc, pcie->mem_res->start,
-			       resource_size(pcie->mem_res));
+	while ((mem_node = of_get_next_child(np, mem_node))) {
+		if(!of_node_name_eq(mem_node, "memory"))
+			continue;
+
+		ret = of_address_to_resource(mem_node, 0, &mem_res);
+		if (ret) {
+			dev_err(dev, "Unable to get memory resource\n");
+			goto err_init;
+		}
+	}
+
+	ret = pci_epc_mem_init(epc, mem_res.start, resource_size(&mem_res));
 	if (ret < 0) {
 		dev_err(dev, "failed to initialize the memory space\n");
 		goto err_init;
