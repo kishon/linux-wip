@@ -51,8 +51,13 @@ struct j721e_pcie {
 	void __iomem		*user_cfg_base;
 };
 
+enum j721e_pcie_mode {
+	PCI_MODE_RC,
+	PCI_MODE_EP,
+};
+
 struct j721e_pcie_data {
-	u32			mode;
+	enum j721e_pcie_mode	mode;
 };
 
 static inline u32 j721e_pcie_user_readl(struct j721e_pcie *pcie, u32 offset)
