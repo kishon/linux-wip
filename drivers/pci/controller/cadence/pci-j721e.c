@@ -6,7 +6,6 @@
  * Author: Kishon Vijay Abraham I <kishon@ti.com>
  */
 
-#include <dt-bindings/pci/pci.h>
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
 #include <linux/io.h>
