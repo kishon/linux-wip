@@ -473,7 +473,5 @@ int cdns_pcie_ep_setup(struct cdns_pcie_ep *ep)
 	pci_epc_mem_exit(epc);
 
  err_init:
-	pm_runtime_put_sync(dev);
-
 	return ret;
 }

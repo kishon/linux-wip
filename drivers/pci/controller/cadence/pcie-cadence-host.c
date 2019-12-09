@@ -275,7 +275,5 @@ int cdns_pcie_host_setup(struct cdns_pcie_rc *rc)
 	pci_free_resource_list(&resources);
 
  err_init:
-	pm_runtime_put_sync(dev);
-
 	return ret;
 }
