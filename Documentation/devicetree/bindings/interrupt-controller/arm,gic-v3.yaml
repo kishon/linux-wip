@@ -165,7 +165,12 @@ patternProperties:
       used to route Message Signalled Interrupts (MSI) to the CPUs.
     properties:
       compatible:
-        const: arm,gic-v3-its
+        oneOf:
+          - items:
+            - enum:
+              - ti,gic-v3-its
+            - const: arm,gic-v3-its
+          - const: arm,gic-v3-its
 
       msi-controller: true
 
