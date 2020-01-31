@@ -374,6 +374,8 @@ dma_addr_t dma_direct_map_page(struct device *dev, struct page *page,
 	if (unlikely(!dma_direct_possible(dev, dma_addr, size)) &&
 	    !swiotlb_map(dev, &phys, &dma_addr, size, dir, attrs)) {
 		report_addr(dev, dma_addr, size);
+
+		printk("%s %d\n", __func__, __LINE__);
 		return DMA_MAPPING_ERROR;
 	}
 

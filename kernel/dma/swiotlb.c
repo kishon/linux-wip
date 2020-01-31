@@ -468,6 +468,7 @@ phys_addr_t swiotlb_tbl_map_single(struct device *hwdev,
 	if (mapping_size > alloc_size) {
 		dev_warn_once(hwdev, "Invalid sizes (mapping: %zd bytes, alloc: %zd bytes)",
 			      mapping_size, alloc_size);
+		printk("%s %d\n", __func__, __LINE__);
 		return (phys_addr_t)DMA_MAPPING_ERROR;
 	}
 
@@ -502,8 +503,10 @@ phys_addr_t swiotlb_tbl_map_single(struct device *hwdev,
 	 */
 	spin_lock_irqsave(&io_tlb_lock, flags);
 
-	if (unlikely(nslots > io_tlb_nslabs - io_tlb_used))
+	if (unlikely(nslots > io_tlb_nslabs - io_tlb_used)) {
+		printk("%s %d\n", __func__, __LINE__);
 		goto not_found;
+	}
 
 	index = ALIGN(io_tlb_index, stride);
 	if (index >= io_tlb_nslabs)
@@ -516,8 +519,10 @@ phys_addr_t swiotlb_tbl_map_single(struct device *hwdev,
 			index += stride;
 			if (index >= io_tlb_nslabs)
 				index = 0;
-			if (index == wrap)
+			if (index == wrap) {
+				printk("%s %d\n", __func__, __LINE__);
 				goto not_found;
+			}
 		}
 
 		/*
@@ -555,6 +560,7 @@ not_found:
 	if (!(attrs & DMA_ATTR_NO_WARN) && printk_ratelimit())
 		dev_warn(hwdev, "swiotlb buffer is full (sz: %zd bytes), total %lu (slots), used %lu (slots)\n",
 			 alloc_size, io_tlb_nslabs, tmp_io_tlb_used);
+	printk("%s %d\n", __func__, __LINE__);
 	return (phys_addr_t)DMA_MAPPING_ERROR;
 found:
 	io_tlb_used += nslots;
@@ -673,12 +679,15 @@ bool swiotlb_map(struct device *dev, phys_addr_t *phys, dma_addr_t *dma_addr,
 	/* Oh well, have to allocate and map a bounce buffer. */
 	*phys = swiotlb_tbl_map_single(dev, __phys_to_dma(dev, io_tlb_start),
 			*phys, size, size, dir, attrs);
-	if (*phys == (phys_addr_t)DMA_MAPPING_ERROR)
+	if (*phys == (phys_addr_t)DMA_MAPPING_ERROR) {
+		printk("%s %d\n", __func__, __LINE__);
 		return false;
+	}
 
 	/* Ensure that the address returned is DMA'ble */
 	*dma_addr = __phys_to_dma(dev, *phys);
 	if (unlikely(!dma_capable(dev, *dma_addr, size, true))) {
+		printk("%s %d\n", __func__, __LINE__);
 		swiotlb_tbl_unmap_single(dev, *phys, size, size, dir,
 			attrs | DMA_ATTR_SKIP_CPU_SYNC);
 		return false;
