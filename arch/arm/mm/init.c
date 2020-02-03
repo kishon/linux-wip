@@ -471,7 +471,9 @@ static void __init free_highpages(void)
 void __init mem_init(void)
 {
 #ifdef CONFIG_ARM_LPAE
+	memblock_set_bottom_up(true);
 	swiotlb_init(1);
+	memblock_set_bottom_up(false);
 #endif
 
 	set_max_mapnr(pfn_to_page(max_pfn) - mem_map);
