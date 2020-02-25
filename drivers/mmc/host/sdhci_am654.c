@@ -437,11 +437,6 @@ static int sdhci_am654_get_of_property(struct platform_device *pdev,
 	int drv_strength;
 	int ret;
 
-	ret = device_property_read_u32(dev, "ti,otap-del-sel",
-				       &sdhci_am654->otap_del_sel);
-	if (ret)
-		return ret;
-
 	if (sdhci_am654->flags & DLL_PRESENT) {
 		ret = device_property_read_u32(dev, "ti,trm-icp",
 					       &sdhci_am654->trm_icp);

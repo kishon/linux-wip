@@ -7,6 +7,9 @@
 
 #include "k3-am654.dtsi"
 #include <dt-bindings/input/input.h>
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/phy/phy.h>
+#include <dt-bindings/phy/phy-am654-serdes.h>
 
 / {
 	compatible =  "ti,am654-evm", "ti,am654";
@@ -143,6 +146,19 @@
 		>;
 	};
 
+	main_mmc1_pins_default: main_mmc1_pins_default {
+		pinctrl-single,pins = <
+			AM65X_IOPAD(0x02d4, PIN_INPUT_PULLDOWN, 0) /* (C27) MMC1_CLK */
+			AM65X_IOPAD(0x02d8, PIN_INPUT_PULLUP, 0) /* (C28) MMC1_CMD */
+			AM65X_IOPAD(0x02d0, PIN_INPUT_PULLUP, 0) /* (D28) MMC1_DAT0 */
+			AM65X_IOPAD(0x02cc, PIN_INPUT_PULLUP, 0) /* (E27) MMC1_DAT1 */
+			AM65X_IOPAD(0x02c8, PIN_INPUT_PULLUP, 0) /* (D26) MMC1_DAT2 */
+			AM65X_IOPAD(0x02c4, PIN_INPUT_PULLUP, 0) /* (D27) MMC1_DAT3 */
+			AM65X_IOPAD(0x02dc, PIN_INPUT_PULLUP, 0) /* (B24) MMC1_SDCD */
+			AM65X_IOPAD(0x02e0, PIN_INPUT, 0) /* (C24) MMC1_SDWP */
+		>;
+	};
+
 	usb1_pins_default: usb1_pins_default {
 		pinctrl-single,pins = <
 			AM65X_IOPAD(0x02c0, PIN_OUTPUT, 0) /* (AC8) USB1_DRVVBUS */
@@ -272,6 +288,13 @@
 	pinctrl-0 = <&main_mmc0_pins_default>;
 	bus-width = <8>;
 	non-removable;
+	ti,driver-strength-ohm = <50>;
+	disable-wp;
+};
+
+&sdhci1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&main_mmc1_pins_default>;
 	ti,driver-strength-ohm = <50>;
 	disable-wp;
 };
@@ -418,4 +441,24 @@
 		clock-lanes = <0>;
 		data-lanes = <1 2>;
 	};
+};
+
+&serdes0 {
+        assigned-clocks = <&k3_clks 153 4>, <&serdes0 AM654_SERDES_CMU_REFCLK>, <&serdes0 AM654_SERDES_RO_REFCLK>;
+        assigned-clock-parents = <&k3_clks 153 8>, <&k3_clks 153 4>, <&k3_clks 153 4>;
+        status = "okay";
+};
+
+&serdes1 {
+        assigned-clocks = <&serdes1 AM654_SERDES_CMU_REFCLK>;
+        assigned-clock-parents = <&serdes0 AM654_SERDES_RO_REFCLK>;
+        status = "okay";
+};
+
+&pcie0_rc {
+        num-lanes = <2>;
+        phys = <&serdes0 PHY_TYPE_PCIE 1>, <&serdes1 PHY_TYPE_PCIE 1>;
+        phy-names = "pcie-phy0", "pcie-phy1";
+        reset-gpios = <&pca9555 5 GPIO_ACTIVE_HIGH>;
+        status = "okay";
 };
