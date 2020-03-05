@@ -229,8 +229,10 @@ int cdns_pcie_host_setup(struct cdns_pcie_rc *rc)
 	struct device *dev = rc->pcie.dev;
 	struct platform_device *pdev = to_platform_device(dev);
 	struct device_node *np = dev->of_node;
+	struct of_pci_range_parser parser;
 	struct pci_host_bridge *bridge;
 	struct list_head resources;
+	struct of_pci_range range;
 	struct cdns_pcie *pcie;
 	struct resource *res;
 	int ret;
@@ -245,8 +247,14 @@ int cdns_pcie_host_setup(struct cdns_pcie_rc *rc)
 	rc->max_regions = 32;
 	of_property_read_u32(np, "cdns,max-outbound-regions", &rc->max_regions);
 
-	rc->no_bar_nbits = 32;
-	of_property_read_u32(np, "cdns,no-bar-match-nbits", &rc->no_bar_nbits);
+	if (!of_pci_dma_range_parser_init(&parser, np))
+		if (of_pci_range_parser_one(&parser, &range))
+			rc->no_bar_nbits = ilog2(range.size);
+
+	if (!rc->no_bar_nbits) {
+		rc->no_bar_nbits = 32;
+		of_property_read_u32(np, "cdns,no-bar-match-nbits", &rc->no_bar_nbits);
+	}
 
 	rc->vendor_id = 0xffff;
 	of_property_read_u16(np, "vendor-id", &rc->vendor_id);
