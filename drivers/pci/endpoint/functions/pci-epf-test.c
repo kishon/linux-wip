@@ -660,6 +660,7 @@ static int pci_epf_test_set_bar(struct pci_epf *epf)
 
 static int pci_epf_test_core_init(struct pci_epf *epf)
 {
+	struct pci_epf_test *epf_test = epf_get_drvdata(epf);
 	struct pci_epf_header *header = epf->header;
 	const struct pci_epc_features *epc_features;
 	struct pci_epc *epc = epf->epc;
