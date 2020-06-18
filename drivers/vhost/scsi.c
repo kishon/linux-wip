@@ -921,7 +921,7 @@ vhost_scsi_handle_vq(struct vhost_scsi *vs, struct vhost_virtqueue *vq)
 	int ret, prot_bytes, c = 0;
 	u16 lun;
 	u8 task_attr;
-	bool t10_pi = vhost_has_feature(vq, VIRTIO_SCSI_F_T10_PI);
+	bool t10_pi = vhost_has_feature(&vs->dev, VIRTIO_SCSI_F_T10_PI);
 	void *cdb;
 
 	mutex_lock(&vq->mutex);
@@ -1573,26 +1573,20 @@ err_dev:
 
 static int vhost_scsi_set_features(struct vhost_scsi *vs, u64 features)
 {
-	struct vhost_virtqueue *vq;
-	int i;
+	struct vhost_dev *vdev = &vs->dev;
 
 	if (features & ~VHOST_SCSI_FEATURES)
 		return -EOPNOTSUPP;
 
-	mutex_lock(&vs->dev.mutex);
+	mutex_lock(&vdev->mutex);
 	if ((features & (1 << VHOST_F_LOG_ALL)) &&
-	    !vhost_log_access_ok(&vs->dev)) {
-		mutex_unlock(&vs->dev.mutex);
+	    !vhost_log_access_ok(vdev)) {
+		mutex_unlock(&vdev->mutex);
 		return -EFAULT;
 	}
 
-	for (i = 0; i < VHOST_SCSI_MAX_VQ; i++) {
-		vq = &vs->vqs[i].vq;
-		mutex_lock(&vq->mutex);
-		vq->acked_features = features;
-		mutex_unlock(&vq->mutex);
-	}
-	mutex_unlock(&vs->dev.mutex);
+	vdev->features = features;
+	mutex_unlock(&vdev->mutex);
 	return 0;
 }
 
@@ -1789,7 +1783,7 @@ vhost_scsi_do_plug(struct vhost_scsi_tpg *tpg,
 
 	vq = &vs->vqs[VHOST_SCSI_VQ_EVT].vq;
 	mutex_lock(&vq->mutex);
-	if (vhost_has_feature(vq, VIRTIO_SCSI_F_HOTPLUG))
+	if (vhost_has_feature(&vs->dev, VIRTIO_SCSI_F_HOTPLUG))
 		vhost_scsi_send_evt(vs, tpg, lun,
 				   VIRTIO_SCSI_T_TRANSPORT_RESET, reason);
 	mutex_unlock(&vq->mutex);

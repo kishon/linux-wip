@@ -104,12 +104,14 @@ static long vhost_get_vring_endian(struct vhost_virtqueue *vq, u32 idx,
 
 static void vhost_init_is_le(struct vhost_virtqueue *vq)
 {
+	struct vhost_dev *vdev = vq->dev;
+
 	/* Note for legacy virtio: user_be is initialized at reset time
 	 * according to the host endianness. If userspace does not set an
 	 * explicit endianness, the default behavior is native endian, as
 	 * expected by legacy virtio.
 	 */
-	vq->is_le = vhost_has_feature(vq, VIRTIO_F_VERSION_1) || !vq->user_be;
+	vq->is_le = vhost_has_feature(vdev, VIRTIO_F_VERSION_1) || !vq->user_be;
 }
 #else
 static void vhost_disable_cross_endian(struct vhost_virtqueue *vq)
@@ -129,7 +131,9 @@ static long vhost_get_vring_endian(struct vhost_virtqueue *vq, u32 idx,
 
 static void vhost_init_is_le(struct vhost_virtqueue *vq)
 {
-	vq->is_le = vhost_has_feature(vq, VIRTIO_F_VERSION_1)
+	struct vhost_dev *vdev = vq->dev;
+
+	vq->is_le = vhost_has_feature(vdev, VIRTIO_F_VERSION_1)
 		|| virtio_legacy_is_little_endian();
 }
 #endif /* CONFIG_VHOST_CROSS_ENDIAN_LEGACY */
@@ -310,7 +314,6 @@ static void vhost_vq_reset(struct vhost_dev *dev,
 	vq->log_used = false;
 	vq->log_addr = -1ull;
 	vq->private_data = NULL;
-	vq->acked_features = 0;
 	vq->acked_backend_features = 0;
 	vq->log_base = NULL;
 	vq->error_ctx = NULL;
@@ -428,8 +431,9 @@ EXPORT_SYMBOL_GPL(vhost_exceeds_weight);
 static size_t vhost_get_avail_size(struct vhost_virtqueue *vq,
 				   unsigned int num)
 {
+	struct vhost_dev *vdev = vq->dev;
 	size_t event __maybe_unused =
-	       vhost_has_feature(vq, VIRTIO_RING_F_EVENT_IDX) ? 2 : 0;
+	       vhost_has_feature(vdev, VIRTIO_RING_F_EVENT_IDX) ? 2 : 0;
 
 	return sizeof(*vq->avail) +
 	       sizeof(*vq->avail->ring) * num + event;
@@ -438,8 +442,9 @@ static size_t vhost_get_avail_size(struct vhost_virtqueue *vq,
 static size_t vhost_get_used_size(struct vhost_virtqueue *vq,
 				  unsigned int num)
 {
+	struct vhost_dev *vdev = vq->dev;
 	size_t event __maybe_unused =
-	       vhost_has_feature(vq, VIRTIO_RING_F_EVENT_IDX) ? 2 : 0;
+	       vhost_has_feature(vdev, VIRTIO_RING_F_EVENT_IDX) ? 2 : 0;
 
 	return sizeof(*vq->used) +
 	       sizeof(*vq->used->ring) * num + event;
@@ -468,6 +473,7 @@ void vhost_dev_init(struct vhost_dev *dev,
 	dev->iotlb = NULL;
 	dev->mm = NULL;
 	dev->worker = NULL;
+	dev->features = 0;
 	dev->iov_limit = iov_limit;
 	dev->weight = weight;
 	dev->byte_weight = byte_weight;
@@ -738,14 +744,15 @@ static inline void __user *vhost_vq_meta_fetch(struct vhost_virtqueue *vq,
 static bool memory_access_ok(struct vhost_dev *d, struct vhost_iotlb *umem,
 			     int log_all)
 {
+	bool log;
 	int i;
+
+	log = log_all || vhost_has_feature(d, VHOST_F_LOG_ALL);
 
 	for (i = 0; i < d->nvqs; ++i) {
 		bool ok;
-		bool log;
 
 		mutex_lock(&d->vqs[i]->mutex);
-		log = log_all || vhost_has_feature(d->vqs[i], VHOST_F_LOG_ALL);
 		/* If ring is inactive, will check when it's enabled. */
 		if (d->vqs[i]->private_data)
 			ok = vq_memory_access_ok(d->vqs[i]->log_base,
@@ -1329,8 +1336,10 @@ EXPORT_SYMBOL_GPL(vhost_log_access_ok);
 static bool vq_log_access_ok(struct vhost_virtqueue *vq,
 			     void __user *log_base)
 {
+	struct vhost_dev *vdev = vq->dev;
+
 	return vq_memory_access_ok(log_base, vq->umem,
-				   vhost_has_feature(vq, VHOST_F_LOG_ALL)) &&
+				   vhost_has_feature(vdev, VHOST_F_LOG_ALL)) &&
 		(!vq->log_used || log_access_ok(log_base, vq->log_addr,
 				  vhost_get_used_size(vq, vq->num)));
 }
@@ -2376,11 +2385,11 @@ static bool vhost_notify(struct vhost_dev *dev, struct vhost_virtqueue *vq)
 	 * interrupts. */
 	smp_mb();
 
-	if (vhost_has_feature(vq, VIRTIO_F_NOTIFY_ON_EMPTY) &&
+	if (vhost_has_feature(dev, VIRTIO_F_NOTIFY_ON_EMPTY) &&
 	    unlikely(vq->avail_idx == vq->last_avail_idx))
 		return true;
 
-	if (!vhost_has_feature(vq, VIRTIO_RING_F_EVENT_IDX)) {
+	if (!vhost_has_feature(dev, VIRTIO_RING_F_EVENT_IDX)) {
 		__virtio16 flags;
 		if (vhost_get_avail_flags(vq, &flags)) {
 			vq_err(vq, "Failed to get flags");
@@ -2459,7 +2468,7 @@ bool vhost_enable_notify(struct vhost_dev *dev, struct vhost_virtqueue *vq)
 	if (!(vq->used_flags & VRING_USED_F_NO_NOTIFY))
 		return false;
 	vq->used_flags &= ~VRING_USED_F_NO_NOTIFY;
-	if (!vhost_has_feature(vq, VIRTIO_RING_F_EVENT_IDX)) {
+	if (!vhost_has_feature(dev, VIRTIO_RING_F_EVENT_IDX)) {
 		r = vhost_update_used_flags(vq);
 		if (r) {
 			vq_err(vq, "Failed to enable notification at %p: %d\n",
@@ -2496,7 +2505,7 @@ void vhost_disable_notify(struct vhost_dev *dev, struct vhost_virtqueue *vq)
 	if (vq->used_flags & VRING_USED_F_NO_NOTIFY)
 		return;
 	vq->used_flags |= VRING_USED_F_NO_NOTIFY;
-	if (!vhost_has_feature(vq, VIRTIO_RING_F_EVENT_IDX)) {
+	if (!vhost_has_feature(dev, VIRTIO_RING_F_EVENT_IDX)) {
 		r = vhost_update_used_flags(vq);
 		if (r)
 			vq_err(vq, "Failed to enable notification at %p: %d\n",

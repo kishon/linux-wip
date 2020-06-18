@@ -111,7 +111,6 @@ struct vhost_virtqueue {
 	struct vhost_iotlb *umem;
 	struct vhost_iotlb *iotlb;
 	void *private_data;
-	u64 acked_features;
 	u64 acked_backend_features;
 	/* Log write descriptors */
 	void __user *log_base;
@@ -140,6 +139,7 @@ struct vhost_dev {
 	struct mm_struct *mm;
 	struct mutex mutex;
 	struct vhost_virtqueue **vqs;
+	u64 features;
 	int nvqs;
 	struct eventfd_ctx *log_ctx;
 	struct llist_head work_list;
@@ -258,9 +258,9 @@ static inline void *vhost_vq_get_backend(struct vhost_virtqueue *vq)
 	return vq->private_data;
 }
 
-static inline bool vhost_has_feature(struct vhost_virtqueue *vq, int bit)
+static inline bool vhost_has_feature(struct vhost_dev *vdev, int bit)
 {
-	return vq->acked_features & (1ULL << bit);
+	return vdev->features & (1ULL << bit);
 }
 
 static inline bool vhost_backend_has_feature(struct vhost_virtqueue *vq, int bit)
