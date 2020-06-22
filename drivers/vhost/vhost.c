@@ -32,8 +32,6 @@
 #include <linux/nospec.h>
 #include <linux/kcov.h>
 
-#include "vhost.h"
-
 static ushort max_mem_regions = 64;
 module_param(max_mem_regions, ushort, 0444);
 MODULE_PARM_DESC(max_mem_regions,
@@ -42,6 +40,9 @@ static int max_iotlb_entries = 2048;
 module_param(max_iotlb_entries, int, 0444);
 MODULE_PARM_DESC(max_iotlb_entries,
 	"Maximum number of iotlb entries. (default: 2048)");
+
+static DEFINE_IDA(vhost_index_ida);
+static DEFINE_MUTEX(vhost_index_mutex);
 
 enum {
 	VHOST_MEMORY_F_LOG = 0x1,
@@ -2557,14 +2558,166 @@ struct vhost_msg_node *vhost_dequeue_msg(struct vhost_dev *dev,
 }
 EXPORT_SYMBOL_GPL(vhost_dequeue_msg);
 
+static inline int vhost_id_match(const struct vhost_dev *vdev,
+				 const struct vhost_device_id *id)
+{
+	if (id->device != vdev->id.device && id->device != VIRTIO_DEV_ANY_ID)
+		return 0;
+
+	return id->vendor == VIRTIO_DEV_ANY_ID || id->vendor == vdev->id.vendor;
+}
+
+static int vhost_dev_match(struct device *dev, struct device_driver *drv)
+{
+	struct vhost_driver *driver = to_vhost_driver(drv);
+	struct vhost_dev *vdev = to_vhost_dev(dev);
+	const struct vhost_device_id *ids;
+	int i;
+
+	ids = driver->id_table;
+	for (i = 0; ids[i].device; i++)
+		if (vhost_id_match(vdev, &ids[i]))
+			return 1;
+
+	return 0;
+}
+
+static int vhost_dev_probe(struct device *dev)
+{
+	struct vhost_driver *driver = to_vhost_driver(dev->driver);
+	struct vhost_dev *vdev = to_vhost_dev(dev);
+
+	if (!driver->probe)
+		return -ENODEV;
+
+	vdev->driver = driver;
+
+	return driver->probe(vdev);
+}
+
+static int vhost_dev_remove(struct device *dev)
+{
+	struct vhost_driver *driver = to_vhost_driver(dev->driver);
+	struct vhost_dev *vdev = to_vhost_dev(dev);
+	int ret = 0;
+
+	if (driver->remove)
+		ret = driver->remove(vdev);
+	vdev->driver = NULL;
+
+	return ret;
+}
+
+static struct bus_type vhost_bus_type = {
+	.name  = "vhost",
+	.match = vhost_dev_match,
+	.probe = vhost_dev_probe,
+	.remove = vhost_dev_remove,
+};
+
+/**
+ * vhost_register_driver() - Register a vhost driver
+ * @driver: Vhost driver that has to be registered
+ *
+ * Register a vhost driver.
+ */
+int vhost_register_driver(struct vhost_driver *driver)
+{
+	int ret;
+
+	driver->driver.bus = &vhost_bus_type;
+
+	ret = driver_register(&driver->driver);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(vhost_register_driver);
+
+/**
+ * vhost_unregister_driver() - Unregister a vhost driver
+ * @driver: Vhost driver that has to be un-registered
+ *
+ * Unregister a vhost driver.
+ */
+void vhost_unregister_driver(struct vhost_driver *driver)
+{
+	driver_unregister(&driver->driver);
+}
+EXPORT_SYMBOL_GPL(vhost_unregister_driver);
+
+/**
+ * vhost_register_device() - Register vhost device
+ * @vdev: Vhost device that has to be registered
+ *
+ * Allocate a ID and register vhost device.
+ */
+int vhost_register_device(struct vhost_dev *vdev)
+{
+	struct device *dev = &vdev->dev;
+	int ret;
+
+	mutex_lock(&vhost_index_mutex);
+	ret = ida_simple_get(&vhost_index_ida, 0, 0, GFP_KERNEL);
+	mutex_unlock(&vhost_index_mutex);
+	if (ret < 0)
+		return ret;
+
+	vdev->index = ret;
+	dev->bus = &vhost_bus_type;
+	device_initialize(dev);
+
+	dev_set_name(dev, "vhost%u", ret);
+
+	ret = device_add(dev);
+	if (ret) {
+		put_device(dev);
+		goto err;
+	}
+
+	return 0;
+
+err:
+	mutex_lock(&vhost_index_mutex);
+	ida_simple_remove(&vhost_index_ida, vdev->index);
+	mutex_unlock(&vhost_index_mutex);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(vhost_register_device);
+
+/**
+ * vhost_unregister_device() - Un-register vhost device
+ * @vdev: Vhost device that has to be un-registered
+ *
+ * Un-register vhost device and free the allocated ID.
+ */
+void vhost_unregister_device(struct vhost_dev *vdev)
+{
+	device_unregister(&vdev->dev);
+	mutex_lock(&vhost_index_mutex);
+	ida_simple_remove(&vhost_index_ida, vdev->index);
+	mutex_unlock(&vhost_index_mutex);
+}
+EXPORT_SYMBOL_GPL(vhost_unregister_device);
 
 static int __init vhost_init(void)
 {
+	int ret;
+
+	ret = bus_register(&vhost_bus_type);
+	if (ret) {
+		pr_err("failed to register vhost bus --> %d\n", ret);
+		return ret;
+	}
+
 	return 0;
 }
 
 static void __exit vhost_exit(void)
 {
+	bus_unregister(&vhost_bus_type);
 }
 
 module_init(vhost_init);

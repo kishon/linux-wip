@@ -3,7 +3,6 @@
 #define _VHOST_H
 
 #include <linux/eventfd.h>
-#include <linux/vhost.h>
 #include <linux/mm.h>
 #include <linux/mutex.h>
 #include <linux/poll.h>
@@ -13,6 +12,7 @@
 #include <linux/virtio_ring.h>
 #include <linux/atomic.h>
 #include <linux/vhost_iotlb.h>
+#include <uapi/linux/vhost.h>
 
 struct vhost_work;
 typedef void (*vhost_work_fn_t)(struct vhost_work *work);
@@ -135,7 +135,20 @@ struct vhost_msg_node {
   struct list_head node;
 };
 
+struct vhost_driver {
+	struct device_driver driver;
+	struct vhost_device_id *id_table;
+	int (*probe)(struct vhost_dev *dev);
+	int (*remove)(struct vhost_dev *dev);
+};
+
+#define to_vhost_driver(drv) (container_of((drv), struct vhost_driver, driver))
+
 struct vhost_dev {
+	struct device dev;
+	struct vhost_driver *driver;
+	struct vhost_device_id id;
+	int index;
 	struct mm_struct *mm;
 	struct mutex mutex;
 	struct vhost_virtqueue **vqs;
@@ -157,6 +170,13 @@ struct vhost_dev {
 	int (*msg_handler)(struct vhost_dev *dev,
 			   struct vhost_iotlb_msg *msg);
 };
+
+#define to_vhost_dev(d) container_of((d), struct vhost_dev, dev)
+
+int vhost_register_driver(struct vhost_driver *driver);
+void vhost_unregister_driver(struct vhost_driver *driver);
+int vhost_register_device(struct vhost_dev *vdev);
+void vhost_unregister_device(struct vhost_dev *vdev);
 
 bool vhost_exceeds_weight(struct vhost_virtqueue *vq, int pkts, int total_len);
 void vhost_dev_init(struct vhost_dev *, struct vhost_virtqueue **vqs,

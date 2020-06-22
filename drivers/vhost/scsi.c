@@ -47,7 +47,7 @@
 #include <linux/llist.h>
 #include <linux/bitmap.h>
 
-#include "vhost.h"
+#include <uapi/linux/vhost.h>
 
 #define VHOST_SCSI_VERSION  "v0.1"
 #define VHOST_SCSI_NAMELEN 256

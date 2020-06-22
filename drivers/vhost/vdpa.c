@@ -22,7 +22,7 @@
 #include <linux/vhost.h>
 #include <linux/virtio_net.h>
 
-#include "vhost.h"
+#include <uapi/linux/vhost.h>
 
 enum {
 	VHOST_VDPA_FEATURES =

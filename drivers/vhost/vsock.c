@@ -17,7 +17,7 @@
 #include <linux/hashtable.h>
 
 #include <net/af_vsock.h>
-#include "vhost.h"
+#include <uapi/linux/vhost.h>
 
 #define VHOST_VSOCK_DEFAULT_HOST_CID	2
 /* Max number of bytes transferred before requeueing the job.

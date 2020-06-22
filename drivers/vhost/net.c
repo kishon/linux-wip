@@ -18,6 +18,7 @@
 #include <linux/slab.h>
 #include <linux/sched/clock.h>
 #include <linux/sched/signal.h>
+#include <linux/vhost.h>
 #include <linux/vmalloc.h>
 
 #include <linux/net.h>
@@ -33,7 +34,7 @@
 #include <net/sock.h>
 #include <net/xdp.h>
 
-#include "vhost.h"
+#include <uapi/linux/vhost.h>
 
 static int experimental_zcopytx = 0;
 module_param(experimental_zcopytx, int, 0444);
