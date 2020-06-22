@@ -135,6 +135,37 @@ struct vhost_msg_node {
   struct list_head node;
 };
 
+enum vhost_notify_event {
+	NOTIFY_SET_STATUS,
+	NOTIFY_FINALIZE_FEATURES,
+	NOTIFY_RESET,
+};
+
+typedef void vhost_vq_callback_t(struct vhost_virtqueue *);
+/**
+ * struct vhost_config_ops - set of function pointers for performing vhost
+ *   device specific operation
+ * @create_vqs: ops to create vhost virtqueue
+ * @del_vqs: ops to delete vhost virtqueue
+ * @write: ops to write data to buffer provided by remote virtio driver
+ * @read: ops to read data from buffer provided by remote virtio driver
+ * @set_features: ops to set vhost device features
+ * @set_status: ops to set vhost device status
+ * @get_status: ops to get vhost device status
+ */
+struct vhost_config_ops {
+	int (*create_vqs)(struct vhost_dev *vdev, unsigned int nvqs,
+			  unsigned int num_bufs, struct vhost_virtqueue *vqs[],
+			  vhost_vq_callback_t *callbacks[],
+			  const char * const names[]);
+	void (*del_vqs)(struct vhost_dev *vdev);
+	int (*write)(struct vhost_dev *vdev, u64 vhost_dst, void *src, int len);
+	int (*read)(struct vhost_dev *vdev, void *dst, u64 vhost_src, int len);
+	int (*set_features)(struct vhost_dev *vdev, u64 device_features);
+	int (*set_status)(struct vhost_dev *vdev, u8 status);
+	u8 (*get_status)(struct vhost_dev *vdev);
+};
+
 struct vhost_driver {
 	struct device_driver driver;
 	struct vhost_device_id *id_table;
@@ -149,6 +180,8 @@ struct vhost_dev {
 	struct vhost_driver *driver;
 	struct vhost_device_id id;
 	int index;
+	const struct vhost_config_ops *ops;
+	struct blocking_notifier_head notifier;
 	struct mm_struct *mm;
 	struct mutex mutex;
 	struct vhost_virtqueue **vqs;
@@ -173,10 +206,34 @@ struct vhost_dev {
 
 #define to_vhost_dev(d) container_of((d), struct vhost_dev, dev)
 
+static inline void vhost_set_drvdata(struct vhost_dev *vdev, void *data)
+{
+	dev_set_drvdata(&vdev->dev, data);
+}
+
+static inline void *vhost_get_drvdata(struct vhost_dev *vdev)
+{
+	return dev_get_drvdata(&vdev->dev);
+}
+
 int vhost_register_driver(struct vhost_driver *driver);
 void vhost_unregister_driver(struct vhost_driver *driver);
 int vhost_register_device(struct vhost_dev *vdev);
 void vhost_unregister_device(struct vhost_dev *vdev);
+
+int vhost_create_vqs(struct vhost_dev *vdev, unsigned int nvqs,
+		     unsigned int num_bufs, struct vhost_virtqueue *vqs[],
+		     vhost_vq_callback_t *callbacks[],
+		     const char * const names[]);
+void vhost_del_vqs(struct vhost_dev *vdev);
+int vhost_write(struct vhost_dev *vdev, u64 vhost_dst, void *src, int len);
+int vhost_read(struct vhost_dev *vdev, void *dst, u64 vhost_src, int len);
+int vhost_set_features(struct vhost_dev *vdev, u64 device_features);
+u64 vhost_get_features(struct vhost_dev *vdev);
+int vhost_set_status(struct vhost_dev *vdev, u8 status);
+u8 vhost_get_status(struct vhost_dev *vdev);
+
+int vhost_register_notifier(struct vhost_dev *vdev, struct notifier_block *nb);
 
 bool vhost_exceeds_weight(struct vhost_virtqueue *vq, int pkts, int total_len);
 void vhost_dev_init(struct vhost_dev *, struct vhost_virtqueue **vqs,
