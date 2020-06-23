@@ -55,6 +55,7 @@ struct rpmsg_device {
 	u32 dst;
 	struct rpmsg_endpoint *ept;
 	bool announce;
+	struct list_head list;
 
 	const struct rpmsg_device_ops *ops;
 };
