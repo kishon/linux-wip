@@ -2,6 +2,7 @@
 #ifndef _VHOST_H
 #define _VHOST_H
 
+#include <linux/configfs.h>
 #include <linux/eventfd.h>
 #include <linux/mm.h>
 #include <linux/mutex.h>
@@ -181,6 +182,7 @@ struct vhost_config_ops {
 struct vhost_driver {
 	struct device_driver driver;
 	struct vhost_device_id *id_table;
+	struct config_group *group;
 	int (*probe)(struct vhost_dev *dev);
 	int (*remove)(struct vhost_dev *dev);
 };
@@ -232,6 +234,15 @@ int vhost_register_driver(struct vhost_driver *driver);
 void vhost_unregister_driver(struct vhost_driver *driver);
 int vhost_register_device(struct vhost_dev *vdev);
 void vhost_unregister_device(struct vhost_dev *vdev);
+
+struct config_group *vhost_cfs_add_driver_group(const char *name);
+void vhost_cfs_remove_driver_group(struct config_group *group);
+struct config_group *
+vhost_cfs_add_driver_item(struct config_group *driver_group, u32 vendor,
+			  u32 device);
+void vhost_cfs_remove_driver_item(struct config_group *group);
+struct config_group *vhost_cfs_add_device_item(struct vhost_dev *vdev);
+void vhost_cfs_remove_device_item(struct config_group *group);
 
 int vhost_create_vqs(struct vhost_dev *vdev, unsigned int nvqs,
 		     unsigned int num_bufs, struct vhost_virtqueue *vqs[],

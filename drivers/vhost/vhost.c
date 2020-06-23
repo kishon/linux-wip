@@ -3092,6 +3092,64 @@ static struct bus_type vhost_bus_type = {
 };
 
 /**
+ * vhost_remove_cfs() - Remove configfs directory for vhost driver
+ * @driver: Vhost driver for which configfs directory has to be removed
+ *
+ * Remove configfs directory for vhost driver.
+ */
+static void vhost_remove_cfs(struct vhost_driver *driver)
+{
+	struct config_group *driver_group, *group;
+	struct config_item *item, *tmp;
+
+	driver_group = driver->group;
+
+	list_for_each_entry_safe(item, tmp, &driver_group->cg_children,
+				 ci_entry) {
+		group = to_config_group(item);
+		vhost_cfs_remove_driver_item(group);
+	}
+
+	vhost_cfs_remove_driver_group(driver_group);
+}
+
+/**
+ * vhost_add_cfs() - Add configfs directory for vhost driver
+ * @driver: Vhost driver for which configfs directory has to be added
+ *
+ * Add configfs directory for vhost driver.
+ */
+static int vhost_add_cfs(struct vhost_driver *driver)
+{
+	struct config_group *driver_group, *group;
+	const struct vhost_device_id *ids;
+	int ret, i;
+
+	driver_group = vhost_cfs_add_driver_group(driver->driver.name);
+	if (IS_ERR(driver_group))
+		return PTR_ERR(driver_group);
+
+	driver->group = driver_group;
+
+	ids = driver->id_table;
+	for (i = 0; ids[i].device; i++) {
+		group = vhost_cfs_add_driver_item(driver_group, ids[i].vendor,
+						  ids[i].device);
+		if (IS_ERR(group)) {
+			ret = PTR_ERR(driver_group);
+			goto err;
+		}
+	}
+
+	return 0;
+
+err:
+	vhost_remove_cfs(driver);
+
+	return ret;
+}
+
+/**
  * vhost_register_driver() - Register a vhost driver
  * @driver: Vhost driver that has to be registered
  *
@@ -3107,6 +3165,10 @@ int vhost_register_driver(struct vhost_driver *driver)
 	if (ret)
 		return ret;
 
+	ret = vhost_add_cfs(driver);
+	if (ret)
+		return ret;
+
 	return 0;
 }
 EXPORT_SYMBOL_GPL(vhost_register_driver);
@@ -3119,6 +3181,7 @@ EXPORT_SYMBOL_GPL(vhost_register_driver);
  */
 void vhost_unregister_driver(struct vhost_driver *driver)
 {
+	vhost_remove_cfs(driver);
 	driver_unregister(&driver->driver);
 }
 EXPORT_SYMBOL_GPL(vhost_unregister_driver);
