@@ -43,6 +43,15 @@ config VIRTIO_PCI_LEGACY
 
 	  If unsure, say Y.
 
+config VIRTIO_PCI_EPF
+	bool "Support for virtio device on configurable PCIe Endpoint"
+	depends on VIRTIO_PCI
+	help
+          Select this configuration option to enable the VIRTIO driver
+          for configurable PCIe Endpoint running Linux in backend.
+
+          If in doubt, say "N" to disable VIRTIO PCI EPF driver.
+
 config VIRTIO_VDPA
 	tristate "vDPA driver for virtio devices"
 	depends on VDPA
