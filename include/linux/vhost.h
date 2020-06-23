@@ -74,6 +74,7 @@ struct vhost_virtqueue {
 	struct vhost_dev *dev;
 	enum vhost_type type;
 	struct vringh vringh;
+	int index;
 	void (*callback)(struct vhost_virtqueue *vq);
 	void (*notify)(struct vhost_virtqueue *vq);
 
@@ -146,6 +147,12 @@ struct vhost_msg_node {
   };
   struct vhost_virtqueue *vq;
   struct list_head node;
+};
+
+struct vhost_driver_item {
+	struct config_group group;
+	u32 vendor;
+	u32 device;
 };
 
 enum vhost_notify_event {
@@ -228,6 +235,13 @@ static inline void vhost_set_drvdata(struct vhost_dev *vdev, void *data)
 static inline void *vhost_get_drvdata(struct vhost_dev *vdev)
 {
 	return dev_get_drvdata(&vdev->dev);
+}
+
+static inline
+struct vhost_driver_item *to_vhost_driver_item(struct config_item *item)
+{
+	return container_of(to_config_group(item), struct vhost_driver_item,
+			    group);
 }
 
 int vhost_register_driver(struct vhost_driver *driver);

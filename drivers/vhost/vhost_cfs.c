@@ -18,12 +18,6 @@ static struct config_group *vhost_driver_group;
 /* VHOST device like PCIe EP, NTB etc., */
 static struct config_group *vhost_device_group;
 
-struct vhost_driver_item {
-	struct config_group group;
-	u32 vendor;
-	u32 device;
-};
-
 struct vhost_driver_group {
 	struct config_group group;
 };
@@ -32,13 +26,6 @@ struct vhost_device_item {
 	struct config_group group;
 	struct vhost_dev *vdev;
 };
-
-static inline
-struct vhost_driver_item *to_vhost_driver_item(struct config_item *item)
-{
-	return container_of(to_config_group(item), struct vhost_driver_item,
-			    group);
-}
 
 static inline
 struct vhost_device_item *to_vhost_device_item(struct config_item *item)
