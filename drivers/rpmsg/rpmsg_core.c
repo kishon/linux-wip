@@ -563,8 +563,15 @@ EXPORT_SYMBOL(rpmsg_unregister_device);
  */
 int __register_rpmsg_driver(struct rpmsg_driver *rpdrv, struct module *owner)
 {
+	const struct rpmsg_device_id *ids = rpdrv->id_table;
 	rpdrv->drv.bus = &rpmsg_bus;
 	rpdrv->drv.owner = owner;
+
+	while (ids && ids->name[0]) {
+		rpmsg_cfs_add_channel_group(ids->name);
+		ids++;
+	}
+
 	return driver_register(&rpdrv->drv);
 }
 EXPORT_SYMBOL(__register_rpmsg_driver);

@@ -68,12 +68,28 @@ struct rpmsg_endpoint_ops {
 			     poll_table *wait);
 };
 
+/**
+ * struct rpmsg_virtproc_ops - indirection table for rpmsg_virtproc operations
+ * @create_channel: Create a new rpdev channel
+ * @delete_channel: Delete the rpdev channel
+ * @owner: Owner of the module holding the ops
+ */
+struct rpmsg_virtproc_ops {
+	struct device *(*create_channel)(struct device *dev, const char *name);
+	void (*delete_channel)(struct device *dev);
+	struct module *owner;
+};
+
 int rpmsg_register_device(struct rpmsg_device *rpdev);
 int rpmsg_unregister_device(struct device *parent,
 			    struct rpmsg_channel_info *chinfo);
 
 struct device *rpmsg_find_device(struct device *parent,
 				 struct rpmsg_channel_info *chinfo);
+
+struct config_group *
+rpmsg_cfs_add_virtproc_group(struct device *dev,
+			     const struct rpmsg_virtproc_ops *ops);
 
 /**
  * rpmsg_chrdev_register_device() - register chrdev device based on rpdev
