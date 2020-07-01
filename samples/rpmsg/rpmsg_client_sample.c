@@ -57,10 +57,14 @@ static void rpmsg_sample_send_msg_work(struct work_struct *work)
 	struct rpmsg_device *rpdev = idata->rpdev;
 	int ret;
 
-	/* send a message to our remote processor */
-	ret = rpmsg_send(rpdev->ept, MSG, strlen(MSG));
-	if (ret)
-		dev_err(&rpdev->dev, "rpmsg_send failed: %d\n", ret);
+	if (rpdev->dst != RPMSG_ADDR_ANY) {
+		/* send a message to our remote processor */
+		ret = rpmsg_send(rpdev->ept, MSG, strlen(MSG));
+		if (ret)
+			dev_err(&rpdev->dev, "rpmsg_send failed: %d\n", ret);
+	} else {
+		schedule_delayed_work(&idata->send_msg_work, msecs_to_jiffies(50));
+	}
 }
 
 static int rpmsg_sample_probe(struct rpmsg_device *rpdev)
