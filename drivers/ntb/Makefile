@@ -2,6 +2,7 @@
 obj-$(CONFIG_NTB) += ntb.o hw/ test/
 obj-$(CONFIG_NTB_TRANSPORT) += ntb_transport.o
 obj-$(CONFIG_NTB_VIRTIO) += ntb_virtio.o
+obj-$(CONFIG_NTB_VHOST) += ntb_vhost.o
 
 ntb-y			:= core.o
 ntb-$(CONFIG_NTB_MSI)	+= msi.o
