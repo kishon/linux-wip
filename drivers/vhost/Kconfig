@@ -24,6 +24,7 @@ config VHOST_DPN
 
 config VHOST
 	tristate
+	select VHOST_RING
 	select VHOST_IOTLB
 	help
 	  This option is selected by any driver which needs to access

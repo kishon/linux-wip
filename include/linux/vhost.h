@@ -10,6 +10,7 @@
 #include <linux/uio.h>
 #include <linux/virtio_config.h>
 #include <linux/virtio_ring.h>
+#include <linux/vringh.h>
 #include <linux/atomic.h>
 #include <linux/vhost_iotlb.h>
 #include <uapi/linux/vhost.h>
@@ -60,9 +61,20 @@ enum vhost_uaddr_type {
 	VHOST_NUM_ADDRS = 3,
 };
 
+enum vhost_type {
+	VHOST_TYPE_UNKNOWN,
+	VHOST_TYPE_USER,
+	VHOST_TYPE_KERN,
+	VHOST_TYPE_MMIO,
+};
+
 /* The virtqueue structure describes a queue attached to a device. */
 struct vhost_virtqueue {
 	struct vhost_dev *dev;
+	enum vhost_type type;
+	struct vringh vringh;
+	void (*callback)(struct vhost_virtqueue *vq);
+	void (*notify)(struct vhost_virtqueue *vq);
 
 	/* The actual ring of buffers. */
 	struct mutex mutex;
@@ -234,6 +246,16 @@ int vhost_set_status(struct vhost_dev *vdev, u8 status);
 u8 vhost_get_status(struct vhost_dev *vdev);
 
 int vhost_register_notifier(struct vhost_dev *vdev, struct notifier_block *nb);
+
+u64 vhost_virtqueue_get_outbuf(struct vhost_virtqueue *vq, u16 *head, int *len);
+u64 vhost_virtqueue_get_inbuf(struct vhost_virtqueue *vq, u16 *head, int *len);
+void vhost_virtqueue_put_buf(struct vhost_virtqueue *vq, u16 head, int len);
+
+void vhost_virtqueue_disable_cb(struct vhost_virtqueue *vq);
+bool vhost_virtqueue_enable_cb(struct vhost_virtqueue *vq);
+void vhost_virtqueue_notify(struct vhost_virtqueue *vq);
+void vhost_virtqueue_kick(struct vhost_virtqueue *vq);
+void vhost_virtqueue_callback(struct vhost_virtqueue *vq);
 
 bool vhost_exceeds_weight(struct vhost_virtqueue *vq, int pkts, int total_len);
 void vhost_dev_init(struct vhost_dev *, struct vhost_virtqueue **vqs,
