@@ -196,7 +196,7 @@
 
 &serdes_ln_ctrl {
 	idle-states = <J7200_SERDES0_LANE0_PCIE1_LANE0>, <J7200_SERDES0_LANE1_PCIE1_LANE1>,
-		      <J7200_SERDES0_LANE2_QSGMII_LANE1>, <J7200_SERDES0_LANE3_IP4_UNUSED>;
+		      <J7200_SERDES0_LANE2_IP3_UNUSED>, <J7200_SERDES0_LANE3_USB>;
 };
 
 &usb_serdes_mux {
@@ -207,12 +207,13 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&main_usbss0_pins_default>;
 	ti,vbus-divider;
-	ti,usb2-only;
 };
 
 &usb0 {
 	dr_mode = "otg";
-	maximum-speed = "high-speed";
+        maximum-speed = "super-speed";
+        phys = <&serdes0_usb_link>;
+        phy-names = "cdns3,usb3-phy";
 };
 
 &tscadc0 {
@@ -234,12 +235,12 @@
 		resets = <&serdes_wiz0 1>, <&serdes_wiz0 2>;
 	};
 
-	serdes0_qsgmii_link: phy@1 {
-		reg = <2>;
+	serdes0_usb_link: phy@1 {
+		reg = <3>;
 		cdns,num-lanes = <1>;
 		#phy-cells = <0>;
-		cdns,phy-type = <PHY_TYPE_QSGMII>;
-		resets = <&serdes_wiz0 3>;
+		cdns,phy-type = <PHY_TYPE_USB3>;
+		resets = <&serdes_wiz0 4>;
 	};
 };
 
